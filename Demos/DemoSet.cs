@@ -1,6 +1,8 @@
-﻿using DemoRenderer;
+﻿using DemoContentLoader;
+using DemoRenderer;
 using Demos.Demos;
 using Demos.SpecializedTests;
+using Demos.SpecializedTests.Media;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -15,7 +17,7 @@ namespace Demos
         struct Option
         {
             public string Name;
-            public Func<Camera, Demo> Builder;
+            public Func<ContentArchive, Camera, Demo> Builder;
         }
 
         List<Option> options = new List<Option>();
@@ -23,13 +25,13 @@ namespace Demos
         {
             options.Add(new Option
             {
-                Builder = (camera) =>
+                Builder = (content, camera) =>
                 {
                     //Note that the actual work is done in the Initialize function rather than a constructor.
                     //The 'new T()' syntax actually uses reflection and repackages exceptions in an inconvenient way.
                     //By using Initialize instead, the stack trace and debugger will go right to the source.
                     var demo = new T();
-                    demo.Initialize(camera);
+                    demo.Initialize(content, camera);
                     return demo;
                 },
                 Name = typeof(T).Name
@@ -38,15 +40,23 @@ namespace Demos
 
         public DemoSet()
         {
-            AddOption<RayBatcherTests>();
+            AddOption<CarDemo>();
+            AddOption<ColosseumDemo>();
             AddOption<PyramidDemo>();
-            AddOption<BlockChainDemo>();
-            AddOption<ShapePileDemo>();
-            AddOption<BasicRagdollDemo>();
-            AddOption<ClothLatticeDemo>();
+            AddOption<RagdollDemo>();
+            AddOption<CharacterDemo>();
+            AddOption<ContinuousCollisionDetectionDemo>();
+            AddOption<ClothDemo>();
+            AddOption<NewtDemo>();
+            AddOption<PlanetDemo>();
             AddOption<CompoundTestDemo>();
-            AddOption<SphereBlobTestDemo>();
-            AddOption<FountainStressTestDemo>();
+            AddOption<BlockChainDemo>();
+            AddOption<RayCastingDemo>();
+            AddOption<SweepDemo>();
+            AddOption<ContactEventsDemo>();
+            AddOption<CustomVoxelCollidableDemo>();
+            AddOption<RopeStabilityDemo>();
+            AddOption<SubsteppingDemo>();
         }
 
         public int Count { get { return options.Count; } }
@@ -56,9 +66,9 @@ namespace Demos
             return options[index].Name;
         }
 
-        public Demo Build(int index, Camera camera)
+        public Demo Build(int index, ContentArchive content, Camera camera)
         {
-            return options[index].Builder(camera);
+            return options[index].Builder(content, camera);
         }
     }
 }

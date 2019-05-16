@@ -7,6 +7,7 @@ using BepuUtilities.Memory;
 using System.Diagnostics;
 using Quaternion = BepuUtilities.Quaternion;
 using BepuUtilities;
+using BepuPhysics.CollisionDetection;
 
 namespace BepuPhysics.Collidables
 {
@@ -36,22 +37,30 @@ namespace BepuPhysics.Collidables
             HalfLength = length * 0.5f;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ComputeAngularExpansionData(out float maximumRadius, out float maximumAngularExpansion)
+        {
+            maximumRadius = HalfLength + Radius;
+            //The minimum radius is capsules.Radius, so the maximum offset is simply the half length.
+            maximumAngularExpansion = HalfLength;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void GetBounds(ref Quaternion orientation, out Vector3 min, out Vector3 max)
+        public void ComputeBounds(in Quaternion orientation, out Vector3 min, out Vector3 max)
         {
-            Quaternion.TransformUnitY(ref orientation, out var segmentOffset);
+            Quaternion.TransformUnitY(orientation, out var segmentOffset);
             max = Vector3.Abs(HalfLength * segmentOffset) + new Vector3(Radius);
             min = -max;
         }
+
 
         public bool RayTest(in RigidPose pose, in Vector3 origin, in Vector3 direction, out float t, out Vector3 normal)
         {
             //It's convenient to work in local space, so pull the ray into the capsule's local space.
             Matrix3x3.CreateFromQuaternion(pose.Orientation, out var orientation);
             var o = origin - pose.Position;
-            Matrix3x3.TransformTranspose(o, ref orientation, out o);
-            Matrix3x3.TransformTranspose(direction, ref orientation, out var d);
+            Matrix3x3.TransformTranspose(o, orientation, out o);
+            Matrix3x3.TransformTranspose(direction, orientation, out var d);
 
             //Normalize the direction. Sqrts aren't *that* bad, and it both simplifies things and helps avoid numerical problems.
             var inverseDLength = 1f / d.Length();
@@ -103,7 +112,7 @@ namespace BepuPhysics.Collidables
                 {
                     //The hit is on the cylindrical portion of the capsule.
                     normal = new Vector3(cylinderHitLocation.X, 0, cylinderHitLocation.Z) / Radius;
-                    Matrix3x3.Transform(ref normal, ref orientation, out normal);
+                    Matrix3x3.Transform(normal, orientation, out normal);
                     t = (t + tOffset) * inverseDLength;
                     return true;
                 }
@@ -139,7 +148,7 @@ namespace BepuPhysics.Collidables
                 t = -tOffset;
             normal = (os + d * t) / Radius;
             t = (t + tOffset) * inverseDLength;
-            Matrix3x3.Transform(ref normal, ref orientation, out normal);
+            Matrix3x3.Transform(normal, orientation, out normal);
             return true;
 
         }
@@ -185,53 +194,72 @@ namespace BepuPhysics.Collidables
         public Vector<float> HalfLength;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Broadcast(ref Capsule shape)
+        public void Broadcast(in Capsule shape)
         {
             Radius = new Vector<float>(shape.Radius);
             HalfLength = new Vector<float>(shape.HalfLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Gather(ref Capsule source)
+        public void WriteFirst(in Capsule source)
         {
             Unsafe.As<Vector<float>, float>(ref Radius) = source.Radius;
             Unsafe.As<Vector<float>, float>(ref HalfLength) = source.HalfLength;
         }
 
+        public bool AllowOffsetMemoryAccess => true;
+        public int InternalAllocationSize => 0;
+        public void Initialize(in RawBuffer memory) { }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void GetBounds(ref QuaternionWide orientations, out Vector<float> maximumRadius, out Vector<float> maximumAngularExpansion, out Vector3Wide min, out Vector3Wide max)
+        public void WriteSlot(int index, in Capsule source)
         {
-            QuaternionWide.TransformUnitY(ref orientations, out var segmentOffset);
-            Vector3Wide.Scale(ref segmentOffset, ref HalfLength, out segmentOffset);
-            Vector3Wide.Abs(ref segmentOffset, out segmentOffset);
+            GatherScatter.GetOffsetInstance(ref this, index).WriteFirst(source);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void GetBounds(ref QuaternionWide orientations, int countInBundle, out Vector<float> maximumRadius, out Vector<float> maximumAngularExpansion, out Vector3Wide min, out Vector3Wide max)
+        {
+            QuaternionWide.TransformUnitY(orientations, out var segmentOffset);
+            Vector3Wide.Scale(segmentOffset, HalfLength, out segmentOffset);
+            Vector3Wide.Abs(segmentOffset, out segmentOffset);
 
             //The half length extends symmetrically along positive local Y and negative local Y.
-            Vector3Wide.Add(ref segmentOffset, ref Radius, out max);
-            Vector3Wide.Negate(ref max, out min);
+            Vector3Wide.Add(segmentOffset, Radius, out max);
+            Vector3Wide.Negate(max, out min);
 
             maximumRadius = HalfLength + Radius;
             //The minimum radius is capsules.Radius, so the maximum offset is simply the half length.
             maximumAngularExpansion = HalfLength;
         }
 
+        public int MinimumWideRayCount
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                return 2;
+            }
+        }
+
         public void RayTest(ref RigidPoses pose, ref RayWide ray, out Vector<int> intersected, out Vector<float> t, out Vector3Wide normal)
         {
             //It's convenient to work in local space, so pull the ray into the capsule's local space.
-            Matrix3x3Wide.CreateFromQuaternion(ref pose.Orientation, out var orientation);
-            Vector3Wide.Subtract(ref ray.Origin, ref pose.Position, out var oWorld);
-            Matrix3x3Wide.TransformByTransposedWithoutOverlap(ref oWorld, ref orientation, out var o);
-            Matrix3x3Wide.TransformByTransposedWithoutOverlap(ref ray.Direction, ref orientation, out var d);
+            Matrix3x3Wide.CreateFromQuaternion(pose.Orientation, out var orientation);
+            Vector3Wide.Subtract(ray.Origin, pose.Position, out var oWorld);
+            Matrix3x3Wide.TransformByTransposedWithoutOverlap(oWorld, orientation, out var o);
+            Matrix3x3Wide.TransformByTransposedWithoutOverlap(ray.Direction, orientation, out var d);
 
             //Normalize the direction. Sqrts aren't *that* bad, and it both simplifies things and helps avoid numerical problems.
-            Vector3Wide.Length(ref d, out var dLength);
+            Vector3Wide.Length(d, out var dLength);
             var inverseDLength = Vector<float>.One / dLength;
-            Vector3Wide.Scale(ref d, ref inverseDLength, out d);
+            Vector3Wide.Scale(d, inverseDLength, out d);
 
             //Move the origin up to the earliest possible impact time. This isn't necessary for math reasons, but it does help avoid some numerical problems.
-            Vector3Wide.Dot(ref o, ref d, out var od);
+            Vector3Wide.Dot(o, d, out var od);
             var tOffset = Vector.Max(-od - (HalfLength + Radius), Vector<float>.Zero);
-            Vector3Wide.Scale(ref d, ref tOffset, out var oOffset);
-            Vector3Wide.Add(ref o, ref oOffset, out o);
+            Vector3Wide.Scale(d, tOffset, out var oOffset);
+            Vector3Wide.Add(o, oOffset, out o);
             var a = d.X * d.X + d.Z * d.Z;
             var b = o.X * d.X + o.Z * d.Z;
             var radiusSquared = Radius * Radius;
@@ -245,8 +273,8 @@ namespace BepuPhysics.Collidables
                     Vector.LessThanOrEqual(c, Vector<float>.Zero)),
                 Vector.GreaterThanOrEqual(discriminant, Vector<float>.Zero));
             var cylinderT = Vector.Max(-tOffset, (-b - Vector.SquareRoot(discriminant)) / a);
-            Vector3Wide.Scale(ref d, ref cylinderT, out oOffset);
-            Vector3Wide.Add(ref o, ref oOffset, out var cylinderHitLocation);
+            Vector3Wide.Scale(d, cylinderT, out oOffset);
+            Vector3Wide.Add(o, oOffset, out var cylinderHitLocation);
             var inverseRadius = Vector<float>.One / Radius;
             var cylinderNormalX = cylinderHitLocation.X * inverseRadius;
             var cylinderNormalZ = cylinderHitLocation.Z * inverseRadius;
@@ -259,8 +287,8 @@ namespace BepuPhysics.Collidables
                     Vector.AndNot(Vector.LessThanOrEqual(d.Y, Vector<float>.Zero), rayIsntParallel)), HalfLength, -HalfLength);
 
             o.Y -= sphereY;
-            Vector3Wide.Dot(ref o, ref d, out var capB);
-            Vector3Wide.Dot(ref o, ref o, out var capC);
+            Vector3Wide.Dot(o, d, out var capB);
+            Vector3Wide.Dot(o, o, out var capC);
             capC -= radiusSquared;
 
             var capDiscriminant = capB * capB - capC;
@@ -271,16 +299,46 @@ namespace BepuPhysics.Collidables
                 Vector.GreaterThanOrEqual(capDiscriminant, Vector<float>.Zero));
 
             var capT = Vector.Max(-tOffset, -capB - Vector.SquareRoot(capDiscriminant));
-            Vector3Wide.Scale(ref d, ref capT, out oOffset);
-            Vector3Wide.Add(ref o, ref oOffset, out var capHitLocation);
-            Vector3Wide.Scale(ref capHitLocation, ref inverseRadius, out var capNormal);
+            Vector3Wide.Scale(d, capT, out oOffset);
+            Vector3Wide.Add(o, oOffset, out var capHitLocation);
+            Vector3Wide.Scale(capHitLocation, inverseRadius, out var capNormal);
 
             normal.X = Vector.ConditionalSelect(useCylinder, cylinderNormalX, capNormal.X);
             normal.Y = Vector.ConditionalSelect(useCylinder, Vector<float>.Zero, capNormal.Y);
             normal.Z = Vector.ConditionalSelect(useCylinder, cylinderNormalZ, capNormal.Z);
             t = (Vector.ConditionalSelect(useCylinder, cylinderT, capT) + tOffset) * inverseDLength;
             intersected = Vector.ConditionalSelect(useCylinder, cylinderIntersected, capIntersected);
-            Matrix3x3Wide.Transform(ref normal, ref orientation, out normal);
+            Matrix3x3Wide.Transform(normal, orientation, out normal);
+        }
+    }
+
+    public struct CapsuleSupportFinder : ISupportFinder<Capsule, CapsuleWide>
+    {
+        public bool HasMargin
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return true; }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void GetMargin(in CapsuleWide shape, out Vector<float> margin)
+        {
+            margin = shape.Radius;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ComputeSupport(in CapsuleWide shape, in Matrix3x3Wide orientation, in Vector3Wide direction, in Vector<int> terminatedLanes, out Vector3Wide support)
+        {
+            Vector3Wide.Scale(orientation.Y, shape.HalfLength, out support);
+            Vector3Wide.Negate(support, out var negated);
+            Vector3Wide.Dot(orientation.Y, direction, out var dot);
+            var shouldNegate = Vector.LessThan(dot, Vector<float>.Zero);
+            Vector3Wide.ConditionalSelect(shouldNegate, negated, support, out support);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ComputeLocalSupport(in CapsuleWide shape, in Vector3Wide direction, in Vector<int> terminatedLanes, out Vector3Wide support)
+        {
+            support.X = Vector<float>.Zero;
+            support.Y = Vector.ConditionalSelect(Vector.LessThan(direction.Y, Vector<float>.Zero), -shape.HalfLength, shape.HalfLength);
+            support.Z = Vector<float>.Zero;
         }
     }
 }

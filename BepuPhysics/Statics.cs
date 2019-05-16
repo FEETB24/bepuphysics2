@@ -36,7 +36,7 @@ namespace BepuPhysics
         public Buffer<Collidable> Collidables;
 
         public Buffer<RigidPose> Poses;
-        public IdPool<Buffer<int>> HandlePool;
+        public IdPool HandlePool;
         protected BufferPool pool;
         public int Count;
 
@@ -54,19 +54,19 @@ namespace BepuPhysics
             this.bodies = bodies;
             this.broadPhase = broadPhase;
 
-            IdPool<Buffer<int>>.Create(pool.SpecializeFor<int>(), initialCapacity, out HandlePool);
+            HandlePool = new IdPool(initialCapacity, pool);
         }
 
         unsafe void InternalResize(int targetCapacity)
         {
             Debug.Assert(targetCapacity > 0, "Resize is not meant to be used as Dispose. If you want to return everything to the pool, use Dispose instead.");
             //Note that we base the bundle capacities on the static capacity. This simplifies the conditions on allocation
-            targetCapacity = BufferPool<int>.GetLowestContainingElementCount(targetCapacity);
-            Debug.Assert(Poses.Length != BufferPool<RigidPoses>.GetLowestContainingElementCount(targetCapacity), "Should not try to use internal resize of the result won't change the size.");
-            pool.SpecializeFor<RigidPose>().Resize(ref Poses, targetCapacity, Count);
-            pool.SpecializeFor<int>().Resize(ref IndexToHandle, targetCapacity, Count);
-            pool.SpecializeFor<int>().Resize(ref HandleToIndex, targetCapacity, Count);
-            pool.SpecializeFor<Collidable>().Resize(ref Collidables, targetCapacity, Count);
+            targetCapacity = BufferPool.GetCapacityForCount<int>(targetCapacity);
+            Debug.Assert(Poses.Length != BufferPool.GetCapacityForCount<RigidPoses>(targetCapacity), "Should not try to use internal resize of the result won't change the size.");
+            pool.ResizeToAtLeast(ref Poses, targetCapacity, Count);
+            pool.ResizeToAtLeast(ref IndexToHandle, targetCapacity, Count);
+            pool.ResizeToAtLeast(ref HandleToIndex, targetCapacity, Count);
+            pool.ResizeToAtLeast(ref Collidables, targetCapacity, Count);
             //Initialize all the indices beyond the copied region to -1.
             Unsafe.InitBlockUnaligned(((int*)HandleToIndex.Memory) + Count, 0xFF, (uint)(sizeof(int) * (HandleToIndex.Length - Count)));
             //Note that we do NOT modify the idpool's internal queue size here. We lazily handle that during adds, and during explicit calls to EnsureCapacity, Compact, and Resize.
@@ -82,41 +82,42 @@ namespace BepuPhysics
                 "This static handle doesn't seem to exist, or the mappings are out of sync. If a handle exists, both directions should match.");
         }
 
-        struct InactiveBodyCollector : IForEach<int>
+        struct InactiveBodyCollector : IBreakableForEach<int>
         {
             BroadPhase broadPhase;
-            BufferPool<int> pool;
-            public QuickList<int, Buffer<int>> InactiveBodyHandles;
+            BufferPool pool;
+            public QuickList<int> InactiveBodyHandles;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public InactiveBodyCollector(BroadPhase broadPhase, BufferPool pool)
             {
-                this.pool = pool.SpecializeFor<int>();
+                this.pool = pool;
                 this.broadPhase = broadPhase;
-                QuickList<int, Buffer<int>>.Create(this.pool, 32, out InactiveBodyHandles);
+                InactiveBodyHandles = new QuickList<int>(32, pool);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void Dispose()
             {
-                InactiveBodyHandles.Dispose(this.pool);
+                InactiveBodyHandles.Dispose(pool);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void LoopBody(int leafIndex)
+            public bool LoopBody(int leafIndex)
             {
                 ref var leaf = ref broadPhase.staticLeaves[leafIndex];
                 if (leaf.Mobility != CollidableMobility.Static)
                 {
                     InactiveBodyHandles.Add(leaf.Handle, pool);
                 }
+                return true;
             }
         }
 
         void AwakenBodiesInBounds(ref BoundingBox bounds)
         {
             var collector = new InactiveBodyCollector(broadPhase, pool);
-            broadPhase.StaticTree.GetOverlaps(ref bounds, ref collector);
+            broadPhase.StaticTree.GetOverlaps(bounds, ref collector);
             for (int i = 0; i < collector.InactiveBodyHandles.Count; ++i)
             {
                 awakener.AwakenBody(collector.InactiveBodyHandles[i]);
@@ -135,10 +136,10 @@ namespace BepuPhysics
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void UpdateBounds(ref RigidPose pose, ref TypedIndex shapeIndex, out BoundingBox bounds)
+        private void UpdateBounds(in RigidPose pose, TypedIndex shapeIndex, out BoundingBox bounds)
         {
             //Note: the min and max here are in absolute coordinates, which means this is a spot that has to be updated in the event that positions use a higher precision representation.
-            shapes[shapeIndex.Type].ComputeBounds(shapeIndex.Index, ref pose, out bounds.Min, out bounds.Max);
+            shapes[shapeIndex.Type].ComputeBounds(shapeIndex.Index, pose, out bounds.Min, out bounds.Max);
             AwakenBodiesInBounds(ref bounds);
         }
 
@@ -195,7 +196,7 @@ namespace BepuPhysics
                 HandleToIndex[lastHandle] = index;
                 IndexToHandle[index] = lastHandle;
             }
-            HandlePool.Return(handle, pool.SpecializeFor<int>());
+            HandlePool.Return(handle, pool);
             HandleToIndex[handle] = -1;
 
         }
@@ -211,7 +212,7 @@ namespace BepuPhysics
         }
 
 
-        internal void ApplyDescriptionByIndex(int index, int handle, ref StaticDescription description)
+        internal void ApplyDescriptionByIndex(int index, int handle, in StaticDescription description)
         {
             BundleIndexing.GetBundleIndices(index, out var bundleIndex, out var innerIndex);
             Poses[index] = description.Pose;
@@ -224,7 +225,7 @@ namespace BepuPhysics
             //Note that we have to calculate an initial bounding box for the broad phase to be able to insert it efficiently.
             //(In the event of batch adds, you'll want to use batched AABB calculations or just use cached values.)
             //Note: the min and max here are in absolute coordinates, which means this is a spot that has to be updated in the event that positions use a higher precision representation.
-            UpdateBounds(ref description.Pose, ref description.Collidable.Shape, out var bounds);
+            UpdateBounds(description.Pose, description.Collidable.Shape, out var bounds);
             Collidables[index].BroadPhaseIndex =
                 broadPhase.AddStatic(new CollidableReference(CollidableMobility.Static, handle), ref bounds);
         }
@@ -234,7 +235,7 @@ namespace BepuPhysics
         /// </summary>
         /// <param name="description">Description of the static to add.</param>
         /// <returns>Handle of the new static.</returns>
-        public int Add(ref StaticDescription description)
+        public int Add(in StaticDescription description)
         {
             if (Count == HandleToIndex.Length)
             {
@@ -248,7 +249,7 @@ namespace BepuPhysics
             var index = Count++;
             HandleToIndex[handle] = index;
             IndexToHandle[index] = handle;
-            ApplyDescriptionByIndex(index, handle, ref description);
+            ApplyDescriptionByIndex(index, handle, description);
             return handle;
         }
 
@@ -257,14 +258,14 @@ namespace BepuPhysics
         /// </summary>
         /// <param name="handle">Handle of the static to apply the description to.</param>
         /// <param name="description">Description to apply to the static.</param>
-        public void ApplyDescription(int handle, ref StaticDescription description)
+        public void ApplyDescription(int handle, in StaticDescription description)
         {
             ValidateExistingHandle(handle);
             var index = HandleToIndex[handle];
             Debug.Assert(description.Collidable.Shape.Exists, "Static collidables cannot lack a shape. Their only purpose is colliding.");
             //Wake all bodies up in the old bounds AND the new bounds. Inactive bodies that may have been resting on the old static need to be aware of the new environment.
             AwakenBodiesInExistingBounds(ref Collidables[index]);
-            ApplyDescriptionByIndex(index, handle, ref description);
+            ApplyDescriptionByIndex(index, handle, description);
 
         }
 
@@ -303,7 +304,7 @@ namespace BepuPhysics
         /// <param name="capacity">Target static data capacity.</param>
         public void Resize(int capacity)
         {
-            var targetCapacity = BufferPool<int>.GetLowestContainingElementCount(Math.Max(capacity, Count));
+            var targetCapacity = BufferPool.GetCapacityForCount<int>(Math.Max(capacity, Count));
             if (IndexToHandle.Length != targetCapacity)
             {
                 InternalResize(targetCapacity);
@@ -328,11 +329,11 @@ namespace BepuPhysics
         /// <remarks>The object can be reused if it is reinitialized by using EnsureCapacity or Resize.</remarks>
         public void Dispose()
         {
-            pool.SpecializeFor<RigidPose>().Return(ref Poses);
-            pool.SpecializeFor<int>().Return(ref HandleToIndex);
-            pool.SpecializeFor<int>().Return(ref IndexToHandle);
-            pool.SpecializeFor<Collidable>().Return(ref Collidables);
-            HandlePool.Dispose(pool.SpecializeFor<int>());
+            pool.Return(ref Poses);
+            pool.Return(ref HandleToIndex);
+            pool.Return(ref IndexToHandle);
+            pool.Return(ref Collidables);
+            HandlePool.Dispose(pool);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

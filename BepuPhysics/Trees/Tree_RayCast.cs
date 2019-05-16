@@ -7,10 +7,10 @@ using System.Text;
 
 namespace BepuPhysics.Trees
 {
-    partial class Tree
+    partial struct Tree
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        unsafe static bool Intersects(ref Vector3 min, ref Vector3 max, TreeRay* ray, out float t)
+        public unsafe static bool Intersects(in Vector3 min, in Vector3 max, TreeRay* ray, out float t)
         {
             var t0 = min * ray->InverseDirection - ray->OriginOverDirection;
             var t1 = max * ray->InverseDirection - ray->OriginOverDirection;
@@ -20,11 +20,11 @@ namespace BepuPhysics.Trees
             //get mispredicted extremely frequently. Also note 4-wide operations; they're actually faster than using Vector2 or Vector3 due to some unnecessary codegen as of this writing.
             var earliestExit = Vector4.Min(Vector4.Min(new Vector4(ray->MaximumT), new Vector4(tExit.X)), Vector4.Min(new Vector4(tExit.Y), new Vector4(tExit.Z))).X;
             t = Vector4.Max(Vector4.Max(new Vector4(tEntry.X), Vector4.Zero), Vector4.Max(new Vector4(tEntry.Y), new Vector4(tEntry.Z))).X;
-            return t < earliestExit;
+            return t <= earliestExit;
         }
 
 
-        internal unsafe void RayCast<TLeafTester>(int nodeIndex, TreeRay* treeRay, RayData* rayData, int* stack, ref TLeafTester leafTester) where TLeafTester : ILeafTester
+        internal unsafe void RayCast<TLeafTester>(int nodeIndex, TreeRay* treeRay, RayData* rayData, int* stack, ref TLeafTester leafTester) where TLeafTester : IRayLeafTester
         {
             Debug.Assert((nodeIndex >= 0 && nodeIndex < nodeCount) || (Encode(nodeIndex) >= 0 && Encode(nodeIndex) < leafCount));
             Debug.Assert(leafCount >= 2, "This implementation assumes all nodes are filled.");
@@ -36,7 +36,7 @@ namespace BepuPhysics.Trees
                 {
                     //This is actually a leaf node.
                     var leafIndex = Encode(nodeIndex);
-                    leafTester.RayTest(leafIndex, rayData, &treeRay->MaximumT);
+                    leafTester.TestLeaf(leafIndex, rayData, &treeRay->MaximumT);
                     //Leaves have no children; have to pull from the stack to get a new target.
                     if (stackEnd == 0)
                         return;
@@ -45,8 +45,8 @@ namespace BepuPhysics.Trees
                 else
                 {
                     var node = nodes + nodeIndex;
-                    var aIntersected = Intersects(ref node->A.Min, ref node->A.Max, treeRay, out var tA);
-                    var bIntersected = Intersects(ref node->B.Min, ref node->B.Max, treeRay, out var tB);
+                    var aIntersected = Intersects(node->A.Min, node->A.Max, treeRay, out var tA);
+                    var bIntersected = Intersects(node->B.Min, node->B.Max, treeRay, out var tB);
 
                     if (aIntersected)
                     {
@@ -89,7 +89,7 @@ namespace BepuPhysics.Trees
 
         internal const int TraversalStackCapacity = 256;
 
-        internal unsafe void RayCast<TLeafTester>(TreeRay* treeRay, RayData* rayData, ref TLeafTester leafTester) where TLeafTester : ILeafTester
+        internal unsafe void RayCast<TLeafTester>(TreeRay* treeRay, RayData* rayData, ref TLeafTester leafTester) where TLeafTester : IRayLeafTester
         {
             if (leafCount == 0)
                 return;
@@ -97,9 +97,9 @@ namespace BepuPhysics.Trees
             if (leafCount == 1)
             {
                 //If the first node isn't filled, we have to use a special case.
-                if (Intersects(ref nodes->A.Min, ref nodes->A.Max, treeRay, out var tA))
+                if (Intersects(nodes->A.Min, nodes->A.Max, treeRay, out var tA))
                 {
-                    leafTester.RayTest(0, rayData, &treeRay->MaximumT);
+                    leafTester.TestLeaf(0, rayData, &treeRay->MaximumT);
                 }
             }
             else
@@ -111,10 +111,11 @@ namespace BepuPhysics.Trees
             }
         }
 
-        public unsafe void RayCast<TLeafTester>(ref Vector3 origin, ref Vector3 direction, float maximumT, ref TLeafTester leafTester, int id = 0) where TLeafTester : ILeafTester
+        public unsafe void RayCast<TLeafTester>(in Vector3 origin, in Vector3 direction, float maximumT, ref TLeafTester leafTester, int id = 0) where TLeafTester : IRayLeafTester
         {
-            TreeRay.CreateFrom(ref origin, ref direction, maximumT, id, out var rayData, out var treeRay);
+            TreeRay.CreateFrom(origin, direction, maximumT, id, out var rayData, out var treeRay);
             RayCast(&treeRay, &rayData, ref leafTester);
         }
+                
     }
 }

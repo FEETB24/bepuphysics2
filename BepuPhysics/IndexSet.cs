@@ -47,7 +47,7 @@ namespace BepuPhysics
         void InternalResizeForBundleCount(BufferPool pool, int bundleCapacity)
         {
             var copyRegionLength = Math.Min(bundleCapacity, flags.Length);
-            pool.SpecializeFor<ulong>().Resize(ref flags, bundleCapacity, copyRegionLength);
+            pool.ResizeToAtLeast(ref flags, bundleCapacity, copyRegionLength);
             //Since the pool's data is not guaranteed to be clean and the indices rely on it being clean, we must clear any memory beyond the copied region.
             if (flags.Length > copyRegionLength)
                 flags.Clear(copyRegionLength, flags.Length - copyRegionLength);
@@ -89,7 +89,7 @@ namespace BepuPhysics
             bundle |= slot;
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Add(int index , BufferPool pool)
+        public void Add(int index, BufferPool pool)
         {
             var bundleIndex = index >> shift;
             if (bundleIndex >= flags.Length)
@@ -129,7 +129,7 @@ namespace BepuPhysics
         //While we expose a compaction and resize, using it requires care. It would be a mistake to, for example, shrink beyond the current bodies indices size.
         public void Compact(int indexCapacity, BufferPool pool)
         {
-            var desiredBundleCount = BufferPool<ulong>.GetLowestContainingElementCount(GetBundleCapacity(indexCapacity));
+            var desiredBundleCount = BufferPool.GetCapacityForCount<ulong>(GetBundleCapacity(indexCapacity));
             if (flags.Length > desiredBundleCount)
             {
                 InternalResizeForBundleCount(pool, desiredBundleCount);
@@ -137,7 +137,7 @@ namespace BepuPhysics
         }
         public void Resize(int indexCapacity, BufferPool pool)
         {
-            var desiredBundleCount = BufferPool<ulong>.GetLowestContainingElementCount(GetBundleCapacity(indexCapacity));
+            var desiredBundleCount = BufferPool.GetCapacityForCount<ulong>(GetBundleCapacity(indexCapacity));
             if (flags.Length != desiredBundleCount)
             {
                 InternalResizeForBundleCount(pool, desiredBundleCount);
@@ -151,7 +151,7 @@ namespace BepuPhysics
         public void Dispose(BufferPool pool)
         {
             Debug.Assert(flags.Length > 0, "Cannot double-dispose.");
-            pool.SpecializeFor<ulong>().Return(ref flags);
+            pool.Return(ref flags);
             flags = new Buffer<ulong>();
         }
     }

@@ -1,81 +1,45 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
-    <Version>2.0.0-alpha</Version>
+    <Version>2.0.0</Version>
     <Company>Bepu Entertainment LLC</Company>
     <Authors>Ross Nordby</Authors>
-    <Description>Early version of BEPUphysics v2.</Description>
+    <Description>Speedy real time physics simulation library.</Description>
     <Copyright>© Bepu Entertainment LLC</Copyright>
     <PackageProjectUrl>https://github.com/bepu/bepuphysics2</PackageProjectUrl>
     <PackageLicenseUrl>https://github.com/bepu/bepuphysics2/blob/master/LICENSE.md</PackageLicenseUrl>
     <RepositoryUrl>https://github.com/bepu/bepuphysics2</RepositoryUrl>
     <PackageIconUrl>https://raw.githubusercontent.com/bepu/bepuphysics1/master/Documentation/images/readme/bepuphysicslogo256.png</PackageIconUrl>
-    <Configurations>Debug;Release;ReleaseStrip</Configurations>
-    <LangVersion>7.2</LangVersion>
+    <Configurations>Debug;Release;ReleaseStrip;ReleaseStripNoProfiling</Configurations>
+    <LangVersion>latest</LangVersion>
     <PackageTags>physics;3d;rigid body;real time;simulation</PackageTags>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
   </PropertyGroup>
   
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Condition="'$(Configuration)'=='ReleaseStrip'" Command="dotnet &quot;$(ProjectDir)..\Dependencies\ilopt\ilopt.dll&quot; &quot;$(TargetPath)&quot;" />
+    <Exec Condition="'$(Configuration)'=='ReleaseStrip' Or '$(Configuration)'=='ReleaseStripNoProfiling'" Command="dotnet &quot;$(ProjectDir)..\Dependencies\ilopt\ilopt.dll&quot; &quot;$(TargetPath)&quot;" />
   </Target>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
-    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <Optimize>true</Optimize>
-    <DefineConstants>TRACE;RELEASE;PROFILE;NETSTANDARD2_0</DefineConstants>
-    <DebugType>full</DebugType>
-    <DebugSymbols>true</DebugSymbols>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStrip|AnyCPU'">
-    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <Optimize>true</Optimize>
-    <DefineConstants>TRACE;RELEASE;PROFILE;NETSTANDARD2_0</DefineConstants>
-    <DebugType>full</DebugType>
-    <DebugSymbols>true</DebugSymbols>
-    <Optimize>true</Optimize>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x86'">
-    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <Optimize>True</Optimize>
-    <DefineConstants>TRACE;RELEASE;PROFILE</DefineConstants>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStrip|x86'">
-    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <Optimize>True</Optimize>
-    <DefineConstants>TRACE;RELEASE;PROFILE</DefineConstants>
-    <Optimize>true</Optimize>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <Optimize>True</Optimize>
-    <DefineConstants>TRACE;RELEASE;PROFILE</DefineConstants>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStrip|x64'">
-    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <Optimize>True</Optimize>
-    <DefineConstants>TRACE;RELEASE;PROFILE</DefineConstants>
-    <Optimize>true</Optimize>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <DefineConstants>TRACE;DEBUG;CHECKMATH;PROFILE</DefineConstants>
+  
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
     <Optimize>false</Optimize>
+    <DefineConstants>TRACE;DEBUG;CHECKMATH;PROFILE;NETSTANDARD2_0</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x86'">
-    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <DefineConstants>TRACE;DEBUG;CHECKMATH;PROFILE</DefineConstants>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>embedded</DebugType>
+    <Optimize>true</Optimize>
+    <DefineConstants>TRACE;RELEASE;PROFILE;NETSTANDARD2_0</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <DefineConstants>TRACE;DEBUG;CHECKMATH;PROFILE</DefineConstants>
+  <PropertyGroup Condition="'$(Configuration)'=='ReleaseStrip'">
+    <Optimize>true</Optimize>
+    <DefineConstants>TRACE;RELEASE;PROFILE;NETSTANDARD2_0;RELEASESTRIP</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='ReleaseStripNoProfiling'">
+    <Optimize>true</Optimize>
+    <DefineConstants>TRACE;RELEASE;NETSTANDARD2_0;RELEASESTRIP</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -87,6 +51,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Update="CollisionDetection\DepthRefiner.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>DepthRefiner.tt</DependentUpon>
+    </Compile>
+    <Compile Update="Constraints\Contact\ContactConvexTypes.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>ContactConvexTypes.tt</DependentUpon>
+    </Compile>
     <Compile Update="Constraints\Contact\ContactNonconvexTypes.cs">
       <DesignTime>True</DesignTime>
       <AutoGen>True</AutoGen>
@@ -95,6 +69,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="CollisionDetection\DepthRefiner.tt">
+      <Generator>TextTemplatingFileGenerator</Generator>
+      <LastGenOutput>DepthRefiner.cs</LastGenOutput>
+    </None>
+    <None Update="Constraints\Contact\ContactConvexTypes.tt">
+      <LastGenOutput>ContactConvexTypes.cs</LastGenOutput>
+      <Generator>TextTemplatingFileGenerator</Generator>
+    </None>
     <None Update="Constraints\Contact\ContactNonconvexTypes.tt">
       <Generator>TextTemplatingFileGenerator</Generator>
       <LastGenOutput>ContactNonconvexTypes.cs</LastGenOutput>

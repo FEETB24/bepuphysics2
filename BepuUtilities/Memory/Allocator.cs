@@ -10,10 +10,31 @@ namespace BepuUtilities.Memory
     /// Never moves any memory.
     /// </summary>
     /// <remarks>Uses an extremely simple ring buffer that makes no attempt to skip groups of allocations. Not particularly efficient.</remarks>
-    public class Allocator
+    public class Allocator : IDisposable
     {
-
-        private readonly long memoryPoolSize;
+        BufferPool pool;
+        long capacity;
+        /// <summary>
+        /// Gets or sets the capacity of the allocator.
+        /// </summary>
+        public long Capacity
+        {
+            get { return capacity; }
+            set
+            {
+                if (value < 0)
+                    throw new ArgumentException("Capacity must be positive.");
+                if (value < capacity)
+                {
+                    for (int i = 0; i < allocations.Count; ++i)
+                    {
+                        if (value < allocations.Values[i].End)
+                            throw new ArgumentException("Can't reduce capacity below any existing allocation endpoint.");
+                    }
+                }
+                capacity = value;
+            }
+        }
         /// <summary>
         /// Index in allocations that we should start at during the next allocation attempt.
         /// </summary>
@@ -26,18 +47,19 @@ namespace BepuUtilities.Memory
             public ulong Next;
         }
 
-        private QuickDictionary<ulong, Allocation, Array<ulong>, Array<Allocation>, Array<int>, PrimitiveComparer<ulong>> allocations;
+        private QuickDictionary<ulong, Allocation, PrimitiveComparer<ulong>> allocations;
 
         /// <summary>
-        /// Creates a new memory pool.
+        /// Creates a new allocator.
         /// </summary>
-        /// <param name="memoryPoolSize">Size of the pool in elements.</param>
-        public Allocator(long memoryPoolSize, int allocationCountEstimate = 128)
+        /// <param name="capacity">Size of the memory handled by the allocator in elements.</param>
+        /// <param name="initialAllocationCapacity">Estimated number of allocations to allocate room for in the internal structures.</param>
+        /// <param name="pool">Pool to pull internal resources from.</param>
+        public Allocator(long capacity, BufferPool pool, int initialAllocationCapacity = 128)
         {
-            this.memoryPoolSize = memoryPoolSize;
-            QuickDictionary<ulong, Allocation, Array<ulong>, Array<Allocation>, Array<int>, PrimitiveComparer<ulong>>.Create(
-                new PassthroughArrayPool<ulong>(), new PassthroughArrayPool<Allocation>(), new PassthroughArrayPool<int>(),
-                SpanHelper.GetContainingPowerOf2(allocationCountEstimate), 3, out allocations);
+            this.pool = pool;
+            this.Capacity = capacity;
+            allocations = new QuickDictionary<ulong, Allocation, PrimitiveComparer<ulong>>(initialAllocationCapacity, 2, pool);
         }
 
         /// <summary>
@@ -68,11 +90,11 @@ namespace BepuUtilities.Memory
         /// <param name="size">Size of the memory to test.</param>
         /// <param name="ignoredIds">Ids of allocations to treat as nonexistent for the purposes of the test.</param>
         /// <returns>True if the size could fit, false if out of memory or if memory was too fragmented to find a spot.</returns>
-        public bool CanFit<TPredicate>(long size, TPredicate? ignoredIds = null) where TPredicate : struct, IPredicate<ulong>
+        public bool CanFit<TPredicate>(long size, ref TPredicate ignoredIds) where TPredicate : struct, IPredicate<ulong>
         {
             if (allocations.Count == 0)
             {
-                return size <= memoryPoolSize;
+                return size <= Capacity;
             }
             int allocationIndex = searchStartIndex;
             var initialId = allocations.Keys[allocationIndex];
@@ -89,13 +111,13 @@ namespace BepuUtilities.Memory
                     nextAllocationIndex = allocations.IndexOf(nextAllocationId);
                     nextAllocation = allocations.Values[nextAllocationIndex];
                     nextAllocationId = nextAllocation.Next;
-                } while (ignoredIds != null && ignoredIds.Value.Matches(ref nextAllocationId));
+                } while (ignoredIds.Matches(ref nextAllocationId));
 
                 if (nextAllocation.Start < allocation.End)
                 {
                     //Wrapped around, so the gap goes from here to the end of the memory block, and from the beginning of the memory block to the next allocation.
                     //But we need contiguous space so the two areas have to be tested independently.
-                    if (memoryPoolSize - allocation.End >= size)
+                    if (Capacity - allocation.End >= size)
                     {
                         return true;
                     }
@@ -129,6 +151,25 @@ namespace BepuUtilities.Memory
             }
         }
 
+        struct IgnoreNothing : IPredicate<ulong>
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool Matches(ref ulong item)
+            {
+                return false;
+            }
+        }
+        /// <summary>
+        /// Checks if a block of memory can fit into the current state of the allocator.
+        /// </summary>
+        /// <param name="size">Size of the memory to test.</param>
+        /// <returns>True if the size could fit, false if out of memory or if memory was too fragmented to find a spot.</returns>
+        public bool CanFit(long size)
+        {
+            var predicate = default(IgnoreNothing);
+            return CanFit(size, ref predicate);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void AddAllocation(ulong id, long start, long end,
             ref Allocation allocation, ref Allocation nextAllocation)
@@ -146,7 +187,7 @@ namespace BepuUtilities.Memory
             nextAllocation.Previous = id;
             //About to add a new allocation. We had space here this time, so there's a high chance we'll have some more space next time. Point the search to this index.
             searchStartIndex = allocations.Count;
-            allocations.Add(id, newAllocation, new PassthroughArrayPool<ulong>(), new PassthroughArrayPool<Allocation>(), new PassthroughArrayPool<int>());
+            allocations.Add(id, newAllocation, pool);
         }
         /// <summary>
         /// Attempts to allocate a range of memory.
@@ -161,11 +202,10 @@ namespace BepuUtilities.Memory
             if (allocations.Count == 0)
             {
                 //If it's the first allocation, then the next and previous pointers should circle around.
-                if (size <= memoryPoolSize)
+                if (size <= Capacity)
                 {
                     outputStart = 0;
-                    allocations.Add(id, new Allocation { Start = 0, End = size, Next = id, Previous = id },
-                        new PassthroughArrayPool<ulong>(), new PassthroughArrayPool<Allocation>(), new PassthroughArrayPool<int>());
+                    allocations.Add(id, new Allocation { Start = 0, End = size, Next = id, Previous = id }, pool);
                     searchStartIndex = 0;
                     return true;
                 }
@@ -184,7 +224,7 @@ namespace BepuUtilities.Memory
                 {
                     //Wrapped around, so the gap goes from here to the end of the memory block, and from the beginning of the memory block to the next allocation.
                     //But we need contiguous space so the two areas have to be tested independently.
-                    if (memoryPoolSize - allocation.End >= size)
+                    if (Capacity - allocation.End >= size)
                     {
                         AddAllocation(id, outputStart = allocation.End, allocation.End + size, ref allocations.Values[allocationIndex], ref allocations.Values[nextAllocationIndex]);
                         return true;
@@ -273,8 +313,8 @@ namespace BepuUtilities.Memory
         {
             if (allocations.Count == 0)
             {
-                totalFreeSpace = memoryPoolSize;
-                largestContiguous = memoryPoolSize;
+                totalFreeSpace = Capacity;
+                largestContiguous = Capacity;
                 return;
             }
             largestContiguous = 0;
@@ -288,7 +328,7 @@ namespace BepuUtilities.Memory
                 {
                     //The next allocation requires a wrap, so the actual contiguous area is only from our end to the end of the pool,
                     //and then a second region from 0 to the next allocation.
-                    var adjacent = memoryPoolSize - allocations.Values[i].End;
+                    var adjacent = Capacity - allocations.Values[i].End;
                     var wrapped = nextAllocation.Start;
                     if (largestContiguous < adjacent)
                         largestContiguous = adjacent;
@@ -423,6 +463,11 @@ namespace BepuUtilities.Memory
                 forwardId = allocations.Values[forwardIndex].Next;
             }
             Debug.Assert(initialId == backwardId && initialId == forwardId, "We should be able to walk back to the starting id in exactly allocations.Count steps in either direction.");
+        }
+
+        public void Dispose()
+        {
+            allocations.Dispose(pool);
         }
     }
 }

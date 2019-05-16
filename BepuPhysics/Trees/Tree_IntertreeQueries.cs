@@ -6,8 +6,9 @@ using System.Runtime.CompilerServices;
 
 namespace BepuPhysics.Trees
 {
-    partial class Tree
+    partial struct Tree
     {
+        //TODO: No good reason for recursion. This is holdovers from the prototype.
         unsafe void DispatchTestForNodeAgainstLeaf<TOverlapHandler>(int leafIndex, ref Vector3 leafMin, ref Vector3 leafMax, int nodeIndex, ref TOverlapHandler results) where TOverlapHandler : IOverlapHandler
         {
             if (nodeIndex < 0)
@@ -29,8 +30,8 @@ namespace BepuPhysics.Trees
             //Reloading that in the event of eviction would require more work than keeping the derived data on the stack.
             //TODO: this is some pretty questionable microtuning. It's not often that the post-leaf-found recursion will be long enough to evict L1. Definitely test it.
             var bIndex = b.Index;
-            var aIntersects = BoundingBox.Intersects(ref leafMin, ref leafMax, ref a.Min, ref a.Max);
-            var bIntersects = BoundingBox.Intersects(ref leafMin, ref leafMax, ref b.Min, ref b.Max);
+            var aIntersects = BoundingBox.Intersects(leafMin, leafMax, a.Min, a.Max);
+            var bIntersects = BoundingBox.Intersects(leafMin, leafMax, b.Min, b.Max);
             if (aIntersects)
             {
                 DispatchTestForNodeAgainstLeaf(leafIndex, ref leafMin, ref leafMax, a.Index, ref results);
@@ -41,7 +42,7 @@ namespace BepuPhysics.Trees
             }
         }
 
-        unsafe void DispatchTestForLeafAgainstNode<TOverlapHandler>(int leafIndex, ref Vector3 leafMin, ref Vector3 leafMax, int nodeIndex, Tree treeB, ref TOverlapHandler results) where TOverlapHandler : IOverlapHandler
+        unsafe void DispatchTestForLeafAgainstNode<TOverlapHandler>(int leafIndex, ref Vector3 leafMin, ref Vector3 leafMax, int nodeIndex, ref Tree treeB, ref TOverlapHandler results) where TOverlapHandler : IOverlapHandler
         {
             if (nodeIndex < 0)
             {
@@ -49,10 +50,10 @@ namespace BepuPhysics.Trees
             }
             else
             {
-                TestLeafAgainstNode(leafIndex, ref leafMin, ref leafMax, nodeIndex, treeB, ref results);
+                TestLeafAgainstNode(leafIndex, ref leafMin, ref leafMax, nodeIndex, ref treeB, ref results);
             }
         }
-        unsafe void TestLeafAgainstNode<TOverlapHandler>(int leafIndex, ref Vector3 leafMin, ref Vector3 leafMax, int nodeIndex, Tree treeB, ref TOverlapHandler results)
+        unsafe void TestLeafAgainstNode<TOverlapHandler>(int leafIndex, ref Vector3 leafMin, ref Vector3 leafMax, int nodeIndex, ref Tree treeB, ref TOverlapHandler results)
             where TOverlapHandler : IOverlapHandler
         {
             var node = treeB.nodes + nodeIndex;
@@ -63,26 +64,26 @@ namespace BepuPhysics.Trees
             //Reloading that in the event of eviction would require more work than keeping the derived data on the stack.
             //TODO: this is some pretty questionable microtuning. It's not often that the post-leaf-found recursion will be long enough to evict L1. Definitely test it.
             var bIndex = b.Index;
-            var aIntersects = BoundingBox.Intersects(ref leafMin, ref leafMax, ref a.Min, ref a.Max);
-            var bIntersects = BoundingBox.Intersects(ref leafMin, ref leafMax, ref b.Min, ref b.Max);
+            var aIntersects = BoundingBox.Intersects(leafMin, leafMax, a.Min, a.Max);
+            var bIntersects = BoundingBox.Intersects(leafMin, leafMax, b.Min, b.Max);
             if (aIntersects)
             {
-                DispatchTestForLeafAgainstNode(leafIndex, ref leafMin, ref leafMax, a.Index, treeB, ref results);
+                DispatchTestForLeafAgainstNode(leafIndex, ref leafMin, ref leafMax, a.Index, ref treeB, ref results);
             }
             if (bIntersects)
             {
-                DispatchTestForLeafAgainstNode(leafIndex, ref leafMin, ref leafMax, bIndex, treeB, ref results);
+                DispatchTestForLeafAgainstNode(leafIndex, ref leafMin, ref leafMax, bIndex, ref treeB, ref results);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        unsafe void DispatchTestForNodes<TOverlapHandler>(ref NodeChild a, ref NodeChild b, Tree treeB, ref TOverlapHandler results) where TOverlapHandler : IOverlapHandler
+        unsafe void DispatchTestForNodes<TOverlapHandler>(ref NodeChild a, ref NodeChild b, ref Tree treeB, ref TOverlapHandler results) where TOverlapHandler : IOverlapHandler
         {
             if (a.Index >= 0)
             {
                 if (b.Index >= 0)
                 {
-                    GetOverlapsBetweenDifferentNodes(nodes + a.Index, treeB.nodes + b.Index, treeB, ref results);
+                    GetOverlapsBetweenDifferentNodes(nodes + a.Index, treeB.nodes + b.Index, ref treeB, ref results);
                 }
                 else
                 {
@@ -93,7 +94,7 @@ namespace BepuPhysics.Trees
             else if (b.Index >= 0)
             {
                 //leaf A versus node B. Note that we have to maintain order; treeB nodes always should be in the second slot.
-                TestLeafAgainstNode(Encode(a.Index), ref a.Min, ref a.Max, b.Index, treeB, ref results);
+                TestLeafAgainstNode(Encode(a.Index), ref a.Min, ref a.Max, b.Index, ref treeB, ref results);
             }
             else
             {
@@ -102,59 +103,59 @@ namespace BepuPhysics.Trees
             }
         }
 
-        private unsafe void GetOverlapsBetweenDifferentNodes<TOverlapHandler>(Node* a, Node* b, Tree treeB, ref TOverlapHandler results) where TOverlapHandler : IOverlapHandler
+        private unsafe void GetOverlapsBetweenDifferentNodes<TOverlapHandler>(Node* a, Node* b, ref Tree treeB, ref TOverlapHandler results) where TOverlapHandler : IOverlapHandler
         {
             ref var aa = ref a->A;
             ref var ab = ref a->B;
             ref var ba = ref b->A;
             ref var bb = ref b->B;
-            var aaIntersects = Intersects(ref aa, ref ba);
-            var abIntersects = Intersects(ref aa, ref bb);
-            var baIntersects = Intersects(ref ab, ref ba);
-            var bbIntersects = Intersects(ref ab, ref bb);
+            var aaIntersects = Intersects(aa, ba);
+            var abIntersects = Intersects(aa, bb);
+            var baIntersects = Intersects(ab, ba);
+            var bbIntersects = Intersects(ab, bb);
 
             if (aaIntersects)
             {
-                DispatchTestForNodes(ref aa, ref ba, treeB, ref results);
+                DispatchTestForNodes(ref aa, ref ba, ref treeB, ref results);
             }
             if (abIntersects)
             {
-                DispatchTestForNodes(ref aa, ref bb, treeB, ref results);
+                DispatchTestForNodes(ref aa, ref bb, ref treeB, ref results);
             }
             if (baIntersects)
             {
-                DispatchTestForNodes(ref ab, ref ba, treeB, ref results);
+                DispatchTestForNodes(ref ab, ref ba, ref treeB, ref results);
             }
             if (bbIntersects)
             {
-                DispatchTestForNodes(ref ab, ref bb, treeB, ref results);
+                DispatchTestForNodes(ref ab, ref bb, ref treeB, ref results);
             }
         }
 
 
-        public unsafe void GetOverlaps<TOverlapHandler>(Tree treeB, ref TOverlapHandler overlapHandler) where TOverlapHandler : struct, IOverlapHandler
+        public unsafe void GetOverlaps<TOverlapHandler>(ref Tree treeB, ref TOverlapHandler overlapHandler) where TOverlapHandler : struct, IOverlapHandler
         {
             if (leafCount == 0 || treeB.leafCount == 0)
                 return;
             if (leafCount >= 2 && treeB.leafCount >= 2)
             {
                 //Both trees have complete nodes; we can use a general case.
-                GetOverlapsBetweenDifferentNodes(nodes, treeB.nodes, treeB, ref overlapHandler);
+                GetOverlapsBetweenDifferentNodes(nodes, treeB.nodes, ref treeB, ref overlapHandler);
             }
             else if (leafCount == 1 && treeB.leafCount >= 2)
             {
                 //Tree A is degenerate; needs a special case.
                 var a = nodes;
                 var b = treeB.nodes;
-                var aaIntersects = Intersects(ref a->A, ref b->A);
-                var abIntersects = Intersects(ref a->A, ref b->B);
+                var aaIntersects = Intersects(a->A, b->A);
+                var abIntersects = Intersects(a->A, b->B);
                 if (aaIntersects)
                 {
-                    DispatchTestForNodes(ref a->A, ref b->A, treeB, ref overlapHandler);
+                    DispatchTestForNodes(ref a->A, ref b->A, ref treeB, ref overlapHandler);
                 }
                 if (abIntersects)
                 {
-                    DispatchTestForNodes(ref a->A, ref b->B, treeB, ref overlapHandler);
+                    DispatchTestForNodes(ref a->A, ref b->B, ref treeB, ref overlapHandler);
                 }
             }
             else if (leafCount >= 2 && treeB.leafCount == 1)
@@ -162,23 +163,23 @@ namespace BepuPhysics.Trees
                 //Tree B is degenerate; needs a special case.
                 var a = nodes;
                 var b = treeB.nodes;
-                var aaIntersects = Intersects(ref a->A, ref b->A);
-                var baIntersects = Intersects(ref a->B, ref b->A);
+                var aaIntersects = Intersects(a->A, b->A);
+                var baIntersects = Intersects(a->B, b->A);
                 if (aaIntersects)
                 {
-                    DispatchTestForNodes(ref a->A, ref b->A, treeB, ref overlapHandler);
+                    DispatchTestForNodes(ref a->A, ref b->A, ref treeB, ref overlapHandler);
                 }
                 if (baIntersects)
                 {
-                    DispatchTestForNodes(ref a->B, ref b->A, treeB, ref overlapHandler);
+                    DispatchTestForNodes(ref a->B, ref b->A, ref treeB, ref overlapHandler);
                 }
             }
             else
             {
                 Debug.Assert(leafCount == 1 && treeB.leafCount == 1);
-                if (Intersects(ref nodes->A, ref treeB.nodes->A))
+                if (Intersects(nodes->A, treeB.nodes->A))
                 {
-                    DispatchTestForNodes(ref nodes->A, ref treeB.nodes->A, treeB, ref overlapHandler);
+                    DispatchTestForNodes(ref nodes->A, ref treeB.nodes->A, ref treeB, ref overlapHandler);
                 }
             }
         }

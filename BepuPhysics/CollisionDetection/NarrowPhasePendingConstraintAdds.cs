@@ -14,8 +14,6 @@ using BepuPhysics.Constraints.Contact;
 
 namespace BepuPhysics.CollisionDetection
 {
-    //TODO: This class's massive switches and per-type hardcoding are completely impractical in the long run. We have to change it somehow, even if it means accepting slightly more overhead.
-    //We can likely reduce at least some of the hardcoding without any overhead at all.
     /// <summary>
     /// When notified of a new constraint, immediately adds it to the solver.
     /// </summary>
@@ -26,12 +24,12 @@ namespace BepuPhysics.CollisionDetection
             BufferPool pool;
             struct PendingConstraint<TBodyHandles, TDescription, TContactImpulses> where TDescription : IConstraintDescription<TDescription>
             {
-                //Note the memory ordering. Body handles come first; deterministic flushes rely the memory layout to sort pending constraints.
+                //Note the memory ordering. Collidable pair comes first; deterministic flushes rely the memory layout to sort pending constraints.
+                public CollidablePair Pair;
+                public PairCacheIndex ConstraintCacheIndex;
                 public TBodyHandles BodyHandles;
                 public TDescription ConstraintDescription;
                 public TContactImpulses Impulses;
-                public CollidablePair Pair;
-                public PairCacheIndex ConstraintCacheIndex;
             }
 
             internal Buffer<UntypedList> pendingConstraintsByType;
@@ -41,7 +39,7 @@ namespace BepuPhysics.CollisionDetection
             public PendingConstraintAddCache(BufferPool pool, int minimumConstraintCountPerCache = 128)
             {
                 this.pool = pool;
-                pool.SpecializeFor<UntypedList>().Take(PairCache.CollisionConstraintTypeCount, out pendingConstraintsByType);
+                pool.TakeAtLeast(PairCache.CollisionConstraintTypeCount, out pendingConstraintsByType);
                 //Have to clear the memory before use to avoid trash data sticking around.
                 pendingConstraintsByType.Clear(0, PairCache.CollisionConstraintTypeCount);
                 this.minimumConstraintCountPerCache = minimumConstraintCountPerCache;
@@ -55,11 +53,11 @@ namespace BepuPhysics.CollisionDetection
                 ref var cache = ref pendingConstraintsByType[manifoldConstraintType];
                 var byteIndex = cache.Allocate<PendingConstraint<TBodyHandles, TDescription, TContactImpulses>>(minimumConstraintCountPerCache, pool);
                 ref var pendingAdd = ref Unsafe.AsRef<PendingConstraint<TBodyHandles, TDescription, TContactImpulses>>(cache.Buffer.Memory + byteIndex);
+                pendingAdd.Pair = pair;
+                pendingAdd.ConstraintCacheIndex = constraintCacheIndex;
                 pendingAdd.BodyHandles = bodyHandles;
                 pendingAdd.ConstraintDescription = constraintDescription;
                 pendingAdd.Impulses = impulses;
-                pendingAdd.Pair = pair;
-                pendingAdd.ConstraintCacheIndex = constraintCacheIndex;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -69,7 +67,7 @@ namespace BepuPhysics.CollisionDetection
                 if (list.Buffer.Allocated)
                 {
                     ref var start = ref Unsafe.As<byte, PendingConstraint<TBodyHandles, TDescription, TContactImpulses>>(ref *list.Buffer.Memory);
-                    Debug.Assert(list.Buffer.Length > Unsafe.SizeOf<PendingConstraint<TBodyHandles, TDescription, TContactImpulses>>() * list.Count);
+                    Debug.Assert(list.Buffer.Length >= Unsafe.SizeOf<PendingConstraint<TBodyHandles, TDescription, TContactImpulses>>() * list.Count);
                     Debug.Assert(list.ByteCount == Unsafe.SizeOf<PendingConstraint<TBodyHandles, TDescription, TContactImpulses>>() * list.Count);
                     for (int i = 0; i < list.Count; ++i)
                     {
@@ -123,14 +121,13 @@ namespace BepuPhysics.CollisionDetection
                 ref var handles = ref Unsafe.As<TBodyHandles, int>(ref constraint.BodyHandles);
                 while (!simulation.Solver.TryAllocateInBatch(
                     default(TDescription).ConstraintTypeId, batchIndex,
-                    ref Unsafe.As<TBodyHandles, int>(ref constraint.BodyHandles),
-                    typeof(TBodyHandles) == typeof(TwoBodyHandles) ? 2 : 1,
+                    ref handles, typeof(TBodyHandles) == typeof(TwoBodyHandles) ? 2 : 1,
                     out constraintHandle, out reference))
                 {
                     //If a batch index failed, just try the next one. This is guaranteed to eventually work.
                     ++batchIndex;
                 }
-                simulation.Solver.ApplyDescription(ref reference, ref constraint.ConstraintDescription);
+                simulation.Solver.ApplyDescriptionWithoutWaking(ref reference, ref constraint.ConstraintDescription);
                 ref var aLocation = ref simulation.Bodies.HandleToLocation[handles];
                 Debug.Assert(aLocation.SetIndex == 0, "By the time we flush new constraints into the solver, all associated islands should be awake.");
                 simulation.Bodies.AddConstraint(aLocation.Index, constraintHandle, 0);
@@ -153,7 +150,7 @@ namespace BepuPhysics.CollisionDetection
                 if (list.Buffer.Allocated)
                 {
                     ref var start = ref Unsafe.As<byte, PendingConstraint<TBodyHandles, TDescription, TContactImpulses>>(ref *list.Buffer.Memory);
-                    Debug.Assert(list.Buffer.Length > Unsafe.SizeOf<PendingConstraint<TBodyHandles, TDescription, TContactImpulses>>() * list.Count);
+                    Debug.Assert(list.Buffer.Length >= Unsafe.SizeOf<PendingConstraint<TBodyHandles, TDescription, TContactImpulses>>() * list.Count);
                     Debug.Assert(list.ByteCount == Unsafe.SizeOf<PendingConstraint<TBodyHandles, TDescription, TContactImpulses>>() * list.Count);
                     ref var speculativeBatchIndicesForType = ref speculativeBatchIndices[narrowPhaseConstraintTypeId];
                     for (int i = 0; i < list.Count; ++i)
@@ -219,37 +216,35 @@ namespace BepuPhysics.CollisionDetection
                     if (pendingConstraintsByType[i].Buffer.Allocated)
                         pool.Return(ref pendingConstraintsByType[i].Buffer);
                 }
-                pool.SpecializeFor<UntypedList>().Return(ref pendingConstraintsByType);
+                pool.Return(ref pendingConstraintsByType);
             }
 
             internal void AllocateForSpeculativeSearch()
             {
-                pool.SpecializeFor<Buffer<ushort>>().Take(PairCache.CollisionConstraintTypeCount, out speculativeBatchIndices);
+                pool.TakeAtLeast(PairCache.CollisionConstraintTypeCount, out speculativeBatchIndices);
                 speculativeBatchIndices.Clear(0, PairCache.CollisionConstraintTypeCount);
-                var indexPool = pool.SpecializeFor<ushort>();
                 for (int i = 0; i < PairCache.CollisionConstraintTypeCount; ++i)
                 {
                     ref var typeList = ref pendingConstraintsByType[i];
                     if (typeList.Buffer.Allocated)
                     {
                         Debug.Assert(typeList.Count > 0);
-                        indexPool.Take(typeList.Count, out speculativeBatchIndices[i]);
+                        pool.TakeAtLeast(typeList.Count, out speculativeBatchIndices[i]);
                     }
                 }
             }
 
             internal void DisposeSpeculativeSearch()
             {
-                var indexPool = pool.SpecializeFor<ushort>();
                 for (int i = 0; i < PairCache.CollisionConstraintTypeCount; ++i)
                 {
                     ref var indices = ref speculativeBatchIndices[i];
                     if (indices.Allocated)
                     {
-                        indexPool.Return(ref indices);
+                        pool.Return(ref indices);
                     }
                 }
-                pool.SpecializeFor<Buffer<ushort>>().Return(ref speculativeBatchIndices);
+                pool.Return(ref speculativeBatchIndices);
             }
             internal int CountConstraints()
             {

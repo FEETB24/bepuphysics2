@@ -42,15 +42,14 @@ namespace Demos.SpecializedTests
 
         static void FillTrashBuffers(Simulation simulation, Random random)
         {
-            var pool = simulation.BufferPool.SpecializeFor<int>();
-            var bufferPool = simulation.BufferPool.SpecializeFor<Buffer<int>>();
+            var pool = simulation.BufferPool;
             const int bufferCount = 50;
-            QuickList<Buffer<int>, Buffer<Buffer<int>>>.Create(bufferPool, bufferCount, out var bufferList);
+            var bufferList = new QuickList<Buffer<int>>(bufferCount, pool);
             for (int trashBufferIndex = 0; trashBufferIndex < bufferCount; ++trashBufferIndex)
             {
                 //Pull a buffer from the pool, fill it with trash data, and return it. 
                 ref var buffer = ref bufferList.AllocateUnsafely();
-                pool.Take(1 << random.Next(18), out buffer);
+                pool.TakeAtLeast(1 << random.Next(18), out buffer);
                 for (int k = 0; k < buffer.Length; ++k)
                     buffer[k] = random.Next(int.MinValue, int.MaxValue);
             }
@@ -58,13 +57,13 @@ namespace Demos.SpecializedTests
             {
                 pool.Return(ref bufferList[i]);
             }
-            bufferList.Dispose(bufferPool);
+            bufferList.Dispose(pool);
         }
         public static void Test()
         {
-            var simulation = Simulation.Create(new BufferPool(), new TestCallbacks());
+            var simulation = Simulation.Create(new BufferPool(), new DemoNarrowPhaseCallbacks(), new DemoPoseIntegratorCallbacks(new Vector3(0, -10, 0)));
             var sphere = new Sphere(0.5f);
-            var shapeIndex = simulation.Shapes.Add(ref sphere);
+            var shapeIndex = simulation.Shapes.Add(sphere);
 
             var bodyBuilder = new RegularGridWithKinematicBaseBuilder(new Vector3(1), new Vector3(), 1, shapeIndex);
             var constraintBuilder = new BallSocketConstraintBuilder();
@@ -81,7 +80,7 @@ namespace Demos.SpecializedTests
                 {
                     //Clear and recreate.
                     simulation.Clear();
-                    shapeIndex = simulation.Shapes.Add(ref sphere);
+                    shapeIndex = simulation.Shapes.Add(sphere);
                     SimulationSetup.BuildLattice(bodyBuilder, constraintBuilder, width, height, length, simulation, out bodyHandles, out constraintHandles);
                 }
                 else
@@ -100,8 +99,7 @@ namespace Demos.SpecializedTests
             SimulationScrambling.ScrambleBodyConstraintLists(simulation);
             SimulationScrambling.AddRemoveChurn<BallSocket>(simulation, 1000, bodyHandles, constraintHandles);
 
-
-            simulation.PoseIntegrator.Gravity = new Vector3(0, -10, 0);
+            
             ref var location = ref simulation.Bodies.HandleToLocation[bodyHandles[width]];
             Debug.Assert(location.SetIndex == 0, "Nothing above should result in inactive objects.");
             simulation.Bodies.ActiveSet.Velocities[location.Index].Linear = new Vector3(0.1f, 0, 0.1f);

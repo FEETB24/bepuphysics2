@@ -74,16 +74,16 @@ namespace BepuPhysics.Constraints
             //For this 1DOF constraint, the result is a simple scalar.
             //Note that we store the intermediate results of J * M^-1 for use when projecting from constraint space impulses to world velocity changes. 
             //If we didn't store those intermediate values, we could just scale the dot product of jacobians.LinearA with itself to save 4 multiplies.
-            Vector3Wide.Scale(ref jacobians.LinearA, ref inertiaA.InverseMass, out projection.CSIToWSVLinearA);
-            Vector3Wide.Scale(ref jacobians.LinearB, ref inertiaB.InverseMass, out projection.CSIToWSVLinearB);
-            Vector3Wide.Dot(ref projection.CSIToWSVLinearA, ref jacobians.LinearA, out var linearA);
-            Vector3Wide.Dot(ref projection.CSIToWSVLinearB, ref jacobians.LinearB, out var linearB);
+            Vector3Wide.Scale(jacobians.LinearA, inertiaA.InverseMass, out projection.CSIToWSVLinearA);
+            Vector3Wide.Scale(jacobians.LinearB, inertiaB.InverseMass, out projection.CSIToWSVLinearB);
+            Vector3Wide.Dot(projection.CSIToWSVLinearA, jacobians.LinearA, out var linearA);
+            Vector3Wide.Dot(projection.CSIToWSVLinearB, jacobians.LinearB, out var linearB);
 
             //The angular components are a little more involved; (J * I^-1) * JT is explicitly computed.
-            Triangular3x3Wide.TransformBySymmetricWithoutOverlap(ref jacobians.AngularA, ref inertiaA.InverseInertiaTensor, out projection.CSIToWSVAngularA);
-            Triangular3x3Wide.TransformBySymmetricWithoutOverlap(ref jacobians.AngularB, ref inertiaB.InverseInertiaTensor, out projection.CSIToWSVAngularB);
-            Vector3Wide.Dot(ref projection.CSIToWSVAngularA, ref jacobians.AngularA, out var angularA);
-            Vector3Wide.Dot(ref projection.CSIToWSVAngularB, ref jacobians.AngularB, out var angularB);
+            Symmetric3x3Wide.TransformWithoutOverlap(jacobians.AngularA, inertiaA.InverseInertiaTensor, out projection.CSIToWSVAngularA);
+            Symmetric3x3Wide.TransformWithoutOverlap(jacobians.AngularB, inertiaB.InverseInertiaTensor, out projection.CSIToWSVAngularB);
+            Vector3Wide.Dot(projection.CSIToWSVAngularA, jacobians.AngularA, out var angularA);
+            Vector3Wide.Dot(projection.CSIToWSVAngularB, jacobians.AngularB, out var angularB);
 
             //Now for a digression!
             //Softness is applied along the diagonal (which, for a 1DOF constraint, is just the only element).
@@ -233,19 +233,18 @@ namespace BepuPhysics.Constraints
             //wsv += impulse * J * M^-1
             //So while we need to store something here, we can take advantage of the fact that we aren't using the jacobian anywhere else (it's replaced by the JT * effectiveMass term above).
             //Precompute J*M^-1, too.
-            //So you're still loading a jacobian-sized matrix, but you don't need to load M^-1! That saves you 20 scalars. (3x3 + 1 + 3x3 + 1, inverse inertia and mass of two bodies.)
+            //So you're still loading a jacobian-sized matrix, but you don't need to load M^-1! That saves you 14 scalars. (symmetric 3x3 + 1 + symmetric 3x3 + 1)
             //That saves you the multiplication of (impulse * J) * M^-1, which is 6 multiplies and 6 dot products.
 
             //Note that this optimization's value depends on the number of constrained DOFs.
 
             //Net memory change, opt vs no opt, in scalars:
-            //1DOF: costs 1x12, saves 1x1 effective mass and the 20 scalar M^-1: -9
-            //2DOF: costs 2x12, saves 2x2 effective mass and the 20 scalar M^-1: 0
-            //3DOF: costs 3x12, saves 3x3 effective mass and the 20 scalar M^-1: 7
-            //4DOF: costs 4x12, saves 4x4 effective mass and the 20 scalar M^-1: 12
-            //5DOF: costs 5x12, saves 5x5 effective mass and the 20 scalar M^-1: 15
-            //6DOF: costs 6x12, saves 6x6 effective mass and the 20 scalar M^-1: 16
-
+            //1DOF: costs 1x12, saves 1x1 effective mass and the 14 scalar M^-1: -3
+            //2DOF: costs 2x12, saves 2x2 symmetric effective mass and the 14 scalar M^-1: 7
+            //3DOF: costs 3x12, saves 3x3 symmetric effective mass and the 14 scalar M^-1: 16
+            //4DOF: costs 4x12, saves 4x4 symmetric effective mass and the 14 scalar M^-1: 24
+            //5DOF: costs 5x12, saves 5x5 symmetric effective mass and the 14 scalar M^-1: 31
+            //6DOF: costs 6x12, saves 6x6 symmetric effective mass and the 14 scalar M^-1: 37
 
             //Net compute savings, opt vs no opt:
             //DOF savings = 1xDOF * DOFxDOF (DOF DOFdot products), 2 1x3 * scalar (6 multiplies), 2 1x3 * 3x3 (6 3dot products)
@@ -259,22 +258,22 @@ namespace BepuPhysics.Constraints
             //6DOF: 60 multiplies, 42 adds
 
             //So does our 'optimization' actually do anything useful? 
-            //In 1 or 2 DOF constraints, it's a win with no downsides.
-            //3+ are difficult to determine.
+            //In 1 DOF constraints, it's often a win with no downsides.
+            //2+ are difficult to determine.
             //This depends on heavily on the machine's SIMD width. You do every lane's ALU ops in parallel, but the loads are still fundamentally bound by memory bandwidth.
             //The loads are coherent, at least- no gathers on this stuff. But I wouldn't be surprised if 3DOF+ constraints end up being faster *without* the pretransformations on wide SIMD.
-            //This is just something that will require testing.
+            //This is just something that will require case by case analysis. Constraints can have special structure which change the judgment.
 
             //(Also, note that large DOF jacobians are often very sparse. Consider the jacobians used by a 6DOF weld joint. You could likely do special case optimizations to reduce the
             //load further. It is unlikely that you could find a way to do the same to JT * effectiveMass. J * M^-1 might have some savings, though. But J*M^-1 isn't *sparser*
             //than J by itself, so the space savings are limited. As long as you precompute, the above load requirement offset will persist.)
 
-            //Good news, though! There are a lot of 1DOF and 2DOF constraints where this is an unambiguous win.
+            //Good news, though! There are a lot of constraints where this trick is applicable.
 
             //We'll start with the unsoftened effective mass, constructed from the contributions computed above:
             var effectiveMass = Vector<float>.One / (linearA + linearB + angularA + angularB);
 
-            SpringSettings.ComputeSpringiness(ref springSettings, dt, out var positionErrorToVelocity, out var effectiveMassCFMScale, out projection.SoftnessImpulseScale);
+            SpringSettingsWide.ComputeSpringiness(springSettings, dt, out var positionErrorToVelocity, out var effectiveMassCFMScale, out projection.SoftnessImpulseScale);
             var softenedEffectiveMass = effectiveMass * effectiveMassCFMScale;
             
             //Note that we use a bit of a hack when computing the bias velocity- even if our damping ratio/natural frequency implies a strongly springy response
@@ -291,10 +290,10 @@ namespace BepuPhysics.Constraints
             //resulting in the proper wsv * (softenedEffectiveMassT * J)T = wsv * (JT * softenedEffectiveMass).
             //You'll see this pattern repeated in higher DOF constraints. We explicitly compute softenedEffectiveMassT * J, and then apply the transpose in the solves.
             //(Why? Because creating a Matrix3x2 and Matrix2x3 and 4x3 and 3x4 and 5x3 and 3x5 and so on just doubles the number of representations with little value.)
-            Vector3Wide.Scale(ref jacobians.LinearA, ref softenedEffectiveMass, out projection.WSVtoCSILinearA);
-            Vector3Wide.Scale(ref jacobians.AngularA, ref softenedEffectiveMass, out projection.WSVtoCSIAngularA);
-            Vector3Wide.Scale(ref jacobians.LinearB, ref softenedEffectiveMass, out projection.WSVtoCSILinearB);
-            Vector3Wide.Scale(ref jacobians.AngularB, ref softenedEffectiveMass, out projection.WSVtoCSIAngularB);
+            Vector3Wide.Scale(jacobians.LinearA, softenedEffectiveMass, out projection.WSVtoCSILinearA);
+            Vector3Wide.Scale(jacobians.AngularA, softenedEffectiveMass, out projection.WSVtoCSIAngularA);
+            Vector3Wide.Scale(jacobians.LinearB, softenedEffectiveMass, out projection.WSVtoCSILinearB);
+            Vector3Wide.Scale(jacobians.AngularB, softenedEffectiveMass, out projection.WSVtoCSIAngularB);
         }
         //Naming conventions:
         //We transform between two spaces, world and constraint space. We also deal with two quantities- velocities, and impulses. 
@@ -319,14 +318,14 @@ namespace BepuPhysics.Constraints
             //That world space impulse is then converted to a corrective velocity change by scaling the impulse by the inverse mass/inertia.
             //As an optimization for constraints with smaller jacobians, the jacobian * (inertia or mass) transform is precomputed.
             BodyVelocities correctiveVelocityA, correctiveVelocityB;
-            Vector3Wide.Scale(ref data.CSIToWSVLinearA, ref correctiveImpulse, out correctiveVelocityA.Linear);
-            Vector3Wide.Scale(ref data.CSIToWSVAngularA, ref correctiveImpulse, out correctiveVelocityA.Angular);
-            Vector3Wide.Scale(ref data.CSIToWSVLinearB, ref correctiveImpulse, out correctiveVelocityB.Linear);
-            Vector3Wide.Scale(ref data.CSIToWSVAngularB, ref correctiveImpulse, out correctiveVelocityB.Angular);
-            Vector3Wide.Add(ref correctiveVelocityA.Linear, ref wsvA.Linear, out wsvA.Linear);
-            Vector3Wide.Add(ref correctiveVelocityA.Angular, ref wsvA.Angular, out wsvA.Angular);
-            Vector3Wide.Add(ref correctiveVelocityB.Linear, ref wsvB.Linear, out wsvB.Linear);
-            Vector3Wide.Add(ref correctiveVelocityB.Angular, ref wsvB.Angular, out wsvB.Angular);
+            Vector3Wide.Scale(data.CSIToWSVLinearA, correctiveImpulse, out correctiveVelocityA.Linear);
+            Vector3Wide.Scale(data.CSIToWSVAngularA, correctiveImpulse, out correctiveVelocityA.Angular);
+            Vector3Wide.Scale(data.CSIToWSVLinearB, correctiveImpulse, out correctiveVelocityB.Linear);
+            Vector3Wide.Scale(data.CSIToWSVAngularB, correctiveImpulse, out correctiveVelocityB.Angular);
+            Vector3Wide.Add(correctiveVelocityA.Linear, wsvA.Linear, out wsvA.Linear);
+            Vector3Wide.Add(correctiveVelocityA.Angular, wsvA.Angular, out wsvA.Angular);
+            Vector3Wide.Add(correctiveVelocityB.Linear, wsvB.Linear, out wsvB.Linear);
+            Vector3Wide.Add(correctiveVelocityB.Angular, wsvB.Angular, out wsvB.Angular);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -346,10 +345,10 @@ namespace BepuPhysics.Constraints
             //So we are multiplying v * JT.)
             //Then, transform it into an impulse by applying the effective mass.
             //Here, we combine the projection and impulse conversion into a precomputed value, i.e. v * (JT * softenedEffectiveMass).
-            Vector3Wide.Dot(ref wsvA.Linear, ref projection.WSVtoCSILinearA, out var csiaLinear);
-            Vector3Wide.Dot(ref wsvA.Angular, ref projection.WSVtoCSIAngularA, out var csiaAngular);
-            Vector3Wide.Dot(ref wsvB.Linear, ref projection.WSVtoCSILinearB, out var csibLinear);
-            Vector3Wide.Dot(ref wsvB.Angular, ref projection.WSVtoCSIAngularB, out var csibAngular);
+            Vector3Wide.Dot(wsvA.Linear, projection.WSVtoCSILinearA, out var csiaLinear);
+            Vector3Wide.Dot(wsvA.Angular, projection.WSVtoCSIAngularA, out var csiaAngular);
+            Vector3Wide.Dot(wsvB.Linear, projection.WSVtoCSILinearB, out var csibLinear);
+            Vector3Wide.Dot(wsvB.Angular, projection.WSVtoCSIAngularB, out var csibAngular);
             //Combine it all together, following:
             //constraint space impulse = (targetVelocity - currentVelocity) * softenedEffectiveMass
             //constraint space impulse = (bias - accumulatedImpulse * softness - wsv * JT) * softenedEffectiveMass

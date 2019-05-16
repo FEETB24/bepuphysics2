@@ -215,6 +215,8 @@ namespace Demos
         public HoldableBind MoveDown;
         public InstantBind MoveSlower;
         public InstantBind MoveFaster;
+        public HoldableBind Grab;
+        public HoldableBind GrabRotate;
         public float MouseSensitivity;
         public float CameraSlowMoveSpeed;
         public float CameraMoveSpeed;
@@ -244,6 +246,8 @@ namespace Demos
                     MoveUp = Key.ShiftLeft,
                     MoveSlower = MouseWheelAction.ScrollDown,
                     MoveFaster = MouseWheelAction.ScrollUp,
+                    Grab = MouseButton.Right,
+                    GrabRotate = Key.Q,
                     MouseSensitivity = 3e-3f,
                     CameraSlowMoveSpeed = 0.5f,
                     CameraMoveSpeed = 5,

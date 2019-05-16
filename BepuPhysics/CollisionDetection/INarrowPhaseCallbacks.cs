@@ -9,15 +9,29 @@ namespace BepuPhysics.CollisionDetection
 {
     public struct PairMaterialProperties
     {
+        /// <summary>
+        /// Coefficient of friction to apply for the constraint. Maximum friction force will be equal to the normal force times the friction coefficient.
+        /// </summary>
         public float FrictionCoefficient;
+        /// <summary>
+        /// Maximum relative velocity along the contact normal at which the collision constraint will recover from penetration. Clamps the velocity goal created from the spring settings.
+        /// </summary>
         public float MaximumRecoveryVelocity;
+        /// <summary>
+        /// Defines the constraint's penetration recovery spring properties.
+        /// </summary>
         public SpringSettings SpringSettings;
     }
 
     //TODO: We've made some modifications to the way callbacks are used. You should reconsider whether initialize and dispose still make any sense for this type.
     public unsafe interface INarrowPhaseCallbacks
     {
+        /// <summary>
+        /// Performs any required initialization logic after the Simulation instance has been constructed.
+        /// </summary>
+        /// <param name="simulation">Simulation that owns these callbacks.</param>
         void Initialize(Simulation simulation);
+
         /// <summary>
         /// Chooses whether to allow contact generation to proceed for two overlapping collidables.
         /// </summary>
@@ -59,7 +73,9 @@ namespace BepuPhysics.CollisionDetection
         /// <param name="childIndexB">Index of the child of collidable B in the pair. If collidable B is not compound, then this is always 0.</param>
         /// <returns>True if collision detection should proceed, false otherwise.</returns>
         /// <remarks>This is called for each sub-overlap in a collidable pair involving compound collidables. If neither collidable in a pair is compound, this will not be called.
-        /// For compound-including pairs, if the earlier call to AllowContactGeneration returns false for owning pair, this will not be called.</remarks>
+        /// For compound-including pairs, if the earlier call to AllowContactGeneration returns false for owning pair, this will not be called. Note that it is possible
+        /// for this function to be called twice for the same subpair if the pair has continuous collision detection enabled; 
+        /// the CCD sweep test that runs before the contact generation test also asks before performing child pair tests.</remarks>
         bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB);
         /// <summary>
         /// Provides a notification that a manifold has been created between the children of two collidables in a compound-including pair.

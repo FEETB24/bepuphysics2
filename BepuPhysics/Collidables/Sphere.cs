@@ -7,6 +7,7 @@ using BepuUtilities.Memory;
 using System.Diagnostics;
 using BepuUtilities;
 using BepuPhysics.Trees;
+using BepuPhysics.CollisionDetection;
 
 namespace BepuPhysics.Collidables
 {
@@ -36,12 +37,18 @@ namespace BepuPhysics.Collidables
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void GetBounds(ref BepuUtilities.Quaternion orientation, out Vector3 min, out Vector3 max)
+        public void ComputeAngularExpansionData(out float maximumRadius, out float maximumAngularExpansion)
+        {
+            maximumRadius = Radius;
+            maximumAngularExpansion = 0;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ComputeBounds(in BepuUtilities.Quaternion orientation, out Vector3 min, out Vector3 max)
         {
             min = new Vector3(-Radius);
             max = new Vector3(Radius);
         }
-
         public bool RayTest(in RigidPose pose, in Vector3 origin, in Vector3 direction, out float t, out Vector3 normal)
         {
             //Normalize the direction. Sqrts aren't *that* bad, and it both simplifies things and helps avoid numerical problems.
@@ -109,20 +116,31 @@ namespace BepuPhysics.Collidables
     {
         public Vector<float> Radius;
 
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Broadcast(ref Sphere shape)
+        public void Broadcast(in Sphere shape)
         {
             Radius = new Vector<float>(shape.Radius);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Gather(ref Sphere source)
+        public void WriteFirst(in Sphere source)
         {
             Unsafe.As<Vector<float>, float>(ref Radius) = source.Radius;
         }
 
+        public bool AllowOffsetMemoryAccess => true;
+        public int InternalAllocationSize => 0;
+        public void Initialize(in RawBuffer memory) { }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void GetBounds(ref QuaternionWide orientations, out Vector<float> maximumRadius, out Vector<float> maximumAngularExpansion, out Vector3Wide min, out Vector3Wide max)
+        public void WriteSlot(int index, in Sphere source)
+        {
+            Unsafe.Add(ref Unsafe.As<Vector<float>, float>(ref Radius), index) = source.Radius;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void GetBounds(ref QuaternionWide orientations, int countInBundle, out Vector<float> maximumRadius, out Vector<float> maximumAngularExpansion, out Vector3Wide min, out Vector3Wide max)
         {
             //Spheres have perfect symmetry, so there is no need for angular expansion.
             maximumRadius = new Vector<float>();
@@ -135,22 +153,31 @@ namespace BepuPhysics.Collidables
             min = new Vector3Wide(ref negatedRadius);
         }
 
+
+        public int MinimumWideRayCount
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                return 2;
+            }
+        }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void RayTest(ref RigidPoses pose, ref RayWide rayWide, out Vector<int> intersected, out Vector<float> t, out Vector3Wide normal)
         {
             //Normalize the direction. Sqrts aren't *that* bad, and it both simplifies things and helps avoid numerical problems.
-            Vector3Wide.Length(ref rayWide.Direction, out var inverseDLength);
+            Vector3Wide.Length(rayWide.Direction, out var inverseDLength);
             inverseDLength = Vector<float>.One / inverseDLength;
-            Vector3Wide.Scale(ref rayWide.Direction, ref inverseDLength, out var d);
+            Vector3Wide.Scale(rayWide.Direction, inverseDLength, out var d);
 
             //Move the origin up to the earliest possible impact time. This isn't necessary for math reasons, but it does help avoid some numerical problems.
-            Vector3Wide.Subtract(ref rayWide.Origin, ref pose.Position, out var o);
-            Vector3Wide.Dot(ref o, ref d, out var dot);
+            Vector3Wide.Subtract(rayWide.Origin, pose.Position, out var o);
+            Vector3Wide.Dot(o, d, out var dot);
             var tOffset = Vector.Max(Vector<float>.Zero, -dot - Radius);
-            Vector3Wide.Scale(ref d, ref tOffset, out var oOffset);
-            Vector3Wide.Add(ref oOffset, ref o, out o);
-            Vector3Wide.Dot(ref o, ref d, out var b);
-            Vector3Wide.Dot(ref o, ref o, out var c);
+            Vector3Wide.Scale(d, tOffset, out var oOffset);
+            Vector3Wide.Add(oOffset, o, out o);
+            Vector3Wide.Dot(o, d, out var b);
+            Vector3Wide.Dot(o, o, out var c);
             c -= Radius * Radius;
 
             //If b > 0 && c > 0, ray is outside and pointing away, no hit.
@@ -158,17 +185,45 @@ namespace BepuPhysics.Collidables
             var discriminant = b * b - c;
             intersected = Vector.BitwiseAnd(
                 Vector.BitwiseOr(
-                    Vector.LessThanOrEqual(b, Vector<float>.Zero), 
+                    Vector.LessThanOrEqual(b, Vector<float>.Zero),
                     Vector.LessThanOrEqual(c, Vector<float>.Zero)),
                 Vector.GreaterThanOrEqual(discriminant, Vector<float>.Zero));
-            
+
 
             t = Vector.Max(-tOffset, -b - Vector.SquareRoot(discriminant));
-            Vector3Wide.Scale(ref d, ref t, out oOffset);
-            Vector3Wide.Add(ref o, ref oOffset, out normal);
+            Vector3Wide.Scale(d, t, out oOffset);
+            Vector3Wide.Add(o, oOffset, out normal);
             var inverseRadius = Vector<float>.One / Radius;
-            Vector3Wide.Scale(ref normal, ref inverseRadius, out normal);
+            Vector3Wide.Scale(normal, inverseRadius, out normal);
             t = (t + tOffset) * inverseDLength;
+        }
+    }
+
+    public struct SphereSupportFinder : ISupportFinder<Sphere, SphereWide>
+    {
+        public bool HasMargin
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return true; }
+        }
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void GetMargin(in SphereWide shape, out Vector<float> margin)
+        {
+            margin = shape.Radius;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ComputeSupport(in SphereWide shape, in Matrix3x3Wide orientation, in Vector3Wide direction, in Vector<int> terminatedLanes, out Vector3Wide support)
+        {
+            support = default;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ComputeLocalSupport(in SphereWide shape, in Vector3Wide direction, in Vector<int> terminatedLanes, out Vector3Wide support)
+        {
+            support = default;
         }
     }
 

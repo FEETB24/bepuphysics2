@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using DemoRenderer.UI;
+using DemoContentLoader;
 
 namespace Demos
 {
@@ -34,25 +35,51 @@ namespace Demos
             ThreadDispatcher = new SimpleThreadDispatcher(Environment.ProcessorCount);
         }
 
-        public abstract void Initialize(Camera camera);
+        public abstract void Initialize(ContentArchive content, Camera camera);
 
-        public virtual void Update(Input input, float dt)
+        public virtual void Update(Window window, Camera camera, Input input, float dt)
         {
-            //TODO: While for the sake of the demos, using one update per render is probably the easiest/best choice,
-            //we can't assume that every monitor has a 60hz refresh rate. One simple option here is to just measure the primary display's refresh rate ahead of time
-            //and use that as the simulation timestep duration. Different displays would affect the simulation, but it wouldn't be too bad, and it would be locally consistent.
+            //In the demos, we use one time step per frame. We don't bother modifying the physics time step duration for different monitors so different refresh rates
+            //change the rate of simulation. This doesn't actually change the result of the simulation, though, and the simplicity is a good fit for the demos.
+            //In the context of a 'real' application, you could instead use a time accumulator to take time steps of fixed length as needed, or
+            //fully decouple simulation and rendering rates across different threads.
+            //(In either case, you'd also want to interpolate or extrapolate simulation results during rendering for smoothness.)
+            //Note that taking steps of variable length can reduce stability. Gradual or one-off changes can work reasonably well.
             Simulation.Timestep(1 / 60f, ThreadDispatcher);
-        }
 
-        public virtual void Render(Renderer renderer, TextBuilder text, Font font)
+            ////Here's an example of how it would look to use more frequent updates, but still with a fixed amount of time simulated per update call:
+            //const float timeToSimulate = 1 / 60f;
+            //const int timestepsPerUpdate = 2;
+            //const float timePerTimestep = timeToSimulate / timestepsPerUpdate;
+            //for (int i = 0; i < timestepsPerUpdate; ++i)
+            //{
+            //    Simulation.Timestep(timePerTimestep, ThreadDispatcher);
+            //}
+
+            ////And here's an example of how to use an accumulator to take a number of timesteps of fixed length in response to variable update dt:
+            //timeAccumulator += dt;
+            //var targetTimestepDuration = 1 / 120f;
+            //while (timeAccumulator >= targetTimestepDuration)
+            //{
+            //    Simulation.Timestep(targetTimestepDuration, ThreadDispatcher);
+            //    timeAccumulator -= targetTimestepDuration;
+            //}
+            ////If you wanted to smooth out the positions of rendered objects to avoid the 'jitter' that an unpredictable number of time steps per update would cause,
+            ////you can just interpolate the previous and current states using a weight based on the time remaining in the accumulator:
+            //var interpolationWeight = timeAccumulator / targetTimestepDuration;
+        }
+        //If you're using the accumulator-based timestep approach above, you'll need this field.
+        //float timeAccumulator;
+
+        public virtual void Render(Renderer renderer, Camera camera, Input input, TextBuilder text, Font font)
         {
         }
-
 
         protected virtual void OnDispose()
         {
 
         }
+
         bool disposed;
         public void Dispose()
         {

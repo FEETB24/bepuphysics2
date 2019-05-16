@@ -9,22 +9,22 @@ using System.Diagnostics;
 using BepuUtilities.Memory;
 using BepuUtilities.Collections;
 using System.Runtime.CompilerServices;
+using DemoContentLoader;
 
 namespace Demos.SpecializedTests
 {
     public class BroadPhaseStressTestDemo : Demo
     {
-        public unsafe override void Initialize(Camera camera)
+        public unsafe override void Initialize(ContentArchive content, Camera camera)
         {
             camera.Position = new Vector3(-20f, 13, -20f);
             camera.Yaw = MathHelper.Pi * 3f / 4;
             camera.Pitch = MathHelper.Pi * 0.1f;
-            Simulation = Simulation.Create(BufferPool, new TestCallbacks());
-            //Simulation.PoseIntegrator.Gravity = new Vector3(0, -10, 0);
+            Simulation = Simulation.Create(BufferPool, new DemoNarrowPhaseCallbacks(), new DemoPoseIntegratorCallbacks(new Vector3(0, -10, 0)));
 
             var shape = new Sphere(0.5f);
             shape.ComputeInertia(1, out var sphereInertia);
-            var shapeIndex = Simulation.Shapes.Add(ref shape);
+            var shapeIndex = Simulation.Shapes.Add(shape);
             const int width = 64;
             const int height = 64;
             const int length = 64;
@@ -60,7 +60,7 @@ namespace Demos.SpecializedTests
                                 },
                                 LocalInertia = sphereInertia
                             };
-                            Simulation.Bodies.Add(ref bodyDescription);
+                            Simulation.Bodies.Add(bodyDescription);
                         }
                         else
                         {
@@ -78,23 +78,25 @@ namespace Demos.SpecializedTests
                                     Shape = shapeIndex
                                 }
                             };
-                            Simulation.Statics.Add(ref staticDescription);
+                            Simulation.Statics.Add(staticDescription);
                         }
 
                     }
                 }
             }
+            refineTimes = new TimingsRingBuffer(sampleCount, BufferPool);
+            testTimes = new TimingsRingBuffer(sampleCount, BufferPool);
         }
 
         const int sampleCount = 128;
-        TimingsRingBuffer refineTimes = new TimingsRingBuffer(sampleCount);
-        TimingsRingBuffer testTimes = new TimingsRingBuffer(sampleCount);
+        TimingsRingBuffer refineTimes;
+        TimingsRingBuffer testTimes;
         long frameCount;
-        public override void Update(Input input, float dt)
+        public override void Update(Window window, Camera camera, Input input, float dt)
         {
-            base.Update(input, dt);
-            refineTimes.Add(Simulation.Timings[Simulation.BroadPhase]);
-            testTimes.Add(Simulation.Timings[Simulation.BroadPhaseOverlapFinder]);
+            base.Update(window, camera, input, dt);
+            refineTimes.Add(Simulation.Profiler[Simulation.BroadPhase]);
+            testTimes.Add(Simulation.Profiler[Simulation.BroadPhaseOverlapFinder]);
             if (frameCount++ % sampleCount == 0)
             {
                 var refineStats = refineTimes.ComputeStats();

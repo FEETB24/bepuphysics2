@@ -7,7 +7,7 @@ using System.Runtime.CompilerServices;
 namespace BepuUtilities.Collections
 {
     /// <summary>
-    /// Container supporting list-like behaviors built on top of pooled arrays.
+    /// Container supporting list-like behaviors built on top of unmanaged buffers.
     /// </summary>
     /// <remarks>
     /// Be very careful when using this type. It has sacrificed a lot upon the altar of performance; a few notable issues include:
@@ -21,14 +21,13 @@ namespace BepuUtilities.Collections
     /// it does not (and is incapable of) checking that provided memory gets returned to the same pool that it came from.
     /// </remarks>
     /// <typeparam name="T">Type of the elements in the list.</typeparam>
-    /// <typeparam name="TSpan">Type of the memory span backing the list.</typeparam>
-    public struct QuickList<T, TSpan> where TSpan : ISpan<T>
+    public struct QuickList<T> where T : struct
     {
         /// <summary>
         /// Backing memory containing the elements of the list.
         /// Indices from 0 to Count-1 hold actual data. All other data is undefined.
         /// </summary>
-        public TSpan Span;
+        public Buffer<T> Span;
 
         /// <summary>
         /// Number of elements in the list.
@@ -56,7 +55,7 @@ namespace BepuUtilities.Collections
         /// </summary>
         /// <param name="initialSpan">Span to use as backing memory to begin with.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public QuickList(ref TSpan initialSpan)
+        public QuickList(in Buffer<T> initialSpan)
         {
             Span = initialSpan;
             Count = 0;
@@ -67,12 +66,11 @@ namespace BepuUtilities.Collections
         /// </summary>
         /// <param name="pool">Pool to pull a span from.</param>
         /// <param name="minimumInitialCount">The minimum size of the region to be pulled from the pool. Actual span may be larger.</param>
-        /// <param name="list">Created list.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Create<TPool>(TPool pool, int minimumInitialCount, out QuickList<T, TSpan> list) where TPool : IMemoryPool<T, TSpan>
+        public QuickList(int minimumInitialCount, IUnmanagedMemoryPool pool)
         {
-            pool.Take(minimumInitialCount, out list.Span);
-            list.Count = 0;
+            pool.TakeAtLeast(minimumInitialCount, out Span);
+            Count = 0;
         }
 
 
@@ -84,7 +82,7 @@ namespace BepuUtilities.Collections
         /// <param name="newSpan">New span to use.</param>
         /// <param name="oldSpan">Previous span used for elements.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Resize(ref TSpan newSpan, out TSpan oldSpan)
+        public void Resize(ref Buffer<T> newSpan, out Buffer<T> oldSpan)
         {
             Validate();
             oldSpan = Span;
@@ -97,56 +95,41 @@ namespace BepuUtilities.Collections
         }
 
         /// <summary>
-        /// Resizes the list's backing array for the given size as a power of two.
-        /// Any elements that do not fit in the resized span are dropped and the count is truncated.
-        /// </summary>
-        /// <typeparam name="TPool">Type of the span pool.</typeparam>
-        /// <param name="newSizePower">Exponent of the size of the new memory block. New size will be 2^newSizePower.</param>
-        /// <param name="pool">Pool to pull a new span from and return the old span to.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResizeForPower<TPool>(int newSizePower, TPool pool) where TPool : IMemoryPool<T, TSpan>
-        {
-            var oldList = this;
-            pool.TakeForPower(newSizePower, out var newSpan);
-            Resize(ref newSpan, out var oldSpan);
-
-            oldList.Dispose(pool);
-        }
-
-        /// <summary>
         /// Resizes the list's backing array for the given size.
         /// Any elements that do not fit in the resized span are dropped and the count is truncated.
         /// </summary>
-        /// <typeparam name="TPool">Type of the span pool.</typeparam>
         /// <param name="newSize">Minimum number of elements required in the new backing array. Actual capacity of the created span may exceed this size.</param>
         /// <param name="pool">Pool to pull a new span from and return the old span to.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Resize<TPool>(int newSize, TPool pool) where TPool : IMemoryPool<T, TSpan>
+        public void Resize(int newSize, IUnmanagedMemoryPool pool)
         {
-            ResizeForPower(SpanHelper.GetContainingPowerOf2(newSize), pool);
+            var targetSize = pool.GetCapacityForCount<T>(newSize);
+            if (targetSize != Span.Length)
+            {
+                var oldList = this;
+                pool.TakeAtLeast<T>(targetSize, out var newSpan);
+                Resize(ref newSpan, out var oldSpan);
+                oldList.Dispose(pool);
+            }
         }
 
         /// <summary>
         /// Returns the resources associated with the list to pools. Any managed references still contained within the list are cleared (and some unmanaged resources may also be cleared).
         /// </summary>
         /// <param name="pool">Pool used for element spans.</param>   
-        /// <typeparam name="TPool">Type of the pool used for element spans.</typeparam>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Dispose<TPool>(TPool pool)
-             where TPool : IMemoryPool<T, TSpan>
+        public void Dispose(IUnmanagedMemoryPool pool)
         {
-            Span.ClearManagedReferences(0, Count);
             pool.Return(ref Span);
         }
 
         /// <summary>
         /// Ensures that the list has enough room to hold the specified number of elements. Can be used to initialize a list.
         /// </summary>
-        /// <typeparam name="TPool">Type of the pool to pull from.</typeparam>
         /// <param name="count">Number of elements to hold.</param>
         /// <param name="pool">Pool used to obtain a new span if needed.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void EnsureCapacity<TPool>(int count, TPool pool) where TPool : IMemoryPool<T, TSpan>
+        public void EnsureCapacity(int count, IUnmanagedMemoryPool pool)
         {
             if (Span.Allocated)
             {
@@ -157,30 +140,29 @@ namespace BepuUtilities.Collections
             }
             else
             {
-                pool.Take(count, out Span);
+                pool.TakeAtLeast(count, out Span);
             }
         }
 
         /// <summary>
         /// Compacts the internal buffer to the minimum size required for the number of elements in the list.
         /// </summary>
-        public void Compact<TPool>(TPool pool) where TPool : IMemoryPool<T, TSpan>
+        public void Compact(IUnmanagedMemoryPool pool)
         {
             Validate();
-            var newPoolIndex = SpanHelper.GetContainingPowerOf2(Count);
-            if ((1 << newPoolIndex) != Span.Length)
-                ResizeForPower(newPoolIndex, pool);
+            var targetLength = pool.GetCapacityForCount<T>(Count);
+            if (targetLength != Span.Length)
+                Resize(targetLength, pool);
         }
 
         /// <summary>
         /// Adds the elements of a list to the QuickList without checking capacity.
         /// </summary>
-        /// <typeparam name="TSourceSpan">Type of the source span.</typeparam>
         /// <param name="span">Span of elements to add.</param>
         /// <param name="start">Start index of the added range.</param>
         /// <param name="count">Number of elements in the added range.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void AddRangeUnsafely<TSourceSpan>(ref TSourceSpan span, int start, int count) where TSourceSpan : ISpan<T>
+        public void AddRangeUnsafely(ref Buffer<T> span, int start, int count)
         {
             Validate();
             ValidateUnsafeAdd();
@@ -191,14 +173,12 @@ namespace BepuUtilities.Collections
         /// <summary>
         /// Adds the elements of a list to the QuickList.
         /// </summary>
-        /// <typeparam name="TPool">Type of the pool to pull from.</typeparam>
-        /// <typeparam name="TSourceSpan">Type of the source span.</typeparam>
         /// <param name="span">Span of elements to add.</param>
         /// <param name="start">Start index of the added range.</param>
         /// <param name="count">Number of elements in the added range.</param>
         /// <param name="pool">Pool used to obtain a new span if needed.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void AddRange<TPool, TSourceSpan>(ref TSourceSpan span, int start, int count, TPool pool) where TPool : IMemoryPool<T, TSpan> where TSourceSpan : ISpan<T>
+        public void AddRange(ref Buffer<T> span, int start, int count, IUnmanagedMemoryPool pool)
         {
             EnsureCapacity(Count + count, pool);
             AddRangeUnsafely(ref span, start, count);
@@ -215,14 +195,30 @@ namespace BepuUtilities.Collections
             return ref Span[Count++];
         }
 
+
+        /// <summary>
+        /// Appends space on the end of the list without checking capacity and returns a reference to the beginning of it.
+        /// </summary>
+        /// <param name="count">Number of elements to allocate space for.</param>
+        /// <returns>Reference to the beginning of the allocated space.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref T AllocateUnsafely(int count)
+        {
+            var newCount = Count + count;
+            Debug.Assert(newCount <= Span.Length, "Capacity must be large enough to hold the requested space.");
+            ref var start = ref Span[Count];
+            Count = newCount;
+            return ref start;
+        }
+
+
         /// <summary>
         /// Appends space on the end of the list and returns a reference to it.
         /// </summary>
         /// <returns>Reference to the allocated space.</returns>
-        /// <typeparam name="TPool">Type of the pool to pull from.</typeparam>
         /// <param name="pool">Pool used to obtain a new span if needed.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref T Allocate<TPool>(TPool pool) where TPool : IMemoryPool<T, TSpan>
+        public ref T Allocate(IUnmanagedMemoryPool pool)
         {
             if (Count == Span.Length)
                 Resize(Count * 2, pool);
@@ -230,11 +226,28 @@ namespace BepuUtilities.Collections
         }
 
         /// <summary>
+        /// Appends space on the end of the list and returns a reference to the beginning of it.
+        /// </summary>
+        /// <returns>Reference to the beginning of the allocated space.</returns>
+        /// <param name="count">Number of elements to allocate space for.</param>
+        /// <param name="pool">Pool used to obtain a new span if needed.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref T Allocate(int count, IUnmanagedMemoryPool pool)
+        {
+            var newCount = Count + count;
+            if (newCount > Span.Length)
+                Resize(Math.Max(Count * 2, newCount), pool);
+            ref var start = ref Span[Count];
+            Count = newCount;
+            return ref start;
+        }
+
+        /// <summary>
         /// Adds the element to the list without checking the count against the capacity.
         /// </summary>
         /// <param name="element">Item to add.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void AddUnsafely(T element)
+        public void AddUnsafely(in T element)
         {
             Validate();
             ValidateUnsafeAdd();
@@ -244,48 +257,17 @@ namespace BepuUtilities.Collections
         /// <summary>
         /// Adds the element to the list.
         /// </summary>
-        /// <typeparam name="TPool">Type of the pool to pull from.</typeparam>
         /// <param name="element">Item to add.</param>
         /// <param name="pool">Pool used to obtain a new span if needed.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Add<TPool>(T element, TPool pool) where TPool : IMemoryPool<T, TSpan>
+        public void Add(in T element, IUnmanagedMemoryPool pool)
         {
             Validate();
             if (Count == Span.Length)
                 Resize(Count * 2, pool);
             AddUnsafely(element);
         }
-
-        /// <summary>
-        /// Adds the element to the list without checking the count against the capacity.
-        /// </summary>
-        /// <param name="element">Element to add.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void AddUnsafely(ref T element)
-        {
-            Validate();
-            ValidateUnsafeAdd();
-            AllocateUnsafely() = element;
-        }
-
-        /// <summary>
-        /// Adds the element to the list.
-        /// </summary>
-        /// <typeparam name="TPool">Type of the pool to pull from.</typeparam>
-        /// <param name="element">Element to add.</param>
-        /// <param name="pool">Pool used to obtain a new span if needed.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Add<TPool>(ref T element, TPool pool) where TPool : IMemoryPool<T, TSpan>
-        {
-            if (Count == Span.Length)
-                Resize(Count * 2, pool);
-            AddUnsafely(ref element);
-        }
-
-
-
-
-
+        
         /// <summary>
         /// Gets the index of the element in the list using the default comparer, if present.
         /// </summary>
@@ -295,7 +277,7 @@ namespace BepuUtilities.Collections
         public int IndexOf(T element)
         {
             Validate();
-            return Span.IndexOf(element, 0, Count);
+            return Span.IndexOf(ref element, 0, Count);
         }
 
 
@@ -305,7 +287,7 @@ namespace BepuUtilities.Collections
         /// <param name="element">Element to find.</param>
         /// <returns>Index of the element in the list if present, -1 otherwise.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int IndexOf(ref T element)
+        public int IndexOfRef(ref T element)
         {
             Validate();
             return Span.IndexOf(ref element, 0, Count);
@@ -323,17 +305,16 @@ namespace BepuUtilities.Collections
             return Span.IndexOf(ref predicate, 0, Count);
         }
 
-
-        /// <summary>
+                       /// <summary>
         /// Removes an element from the list. Preserves the order of elements.
         /// </summary>
         /// <param name="element">Element to remove from the list.</param>
         /// <returns>True if the element was present and was removed, false otherwise.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Remove(T element)
+        public bool Remove(ref T element)
         {
             Validate();
-            var index = IndexOf(element);
+            var index = IndexOfRef(ref element);
             if (index >= 0)
             {
                 RemoveAt(index);
@@ -348,16 +329,9 @@ namespace BepuUtilities.Collections
         /// <param name="element">Element to remove from the list.</param>
         /// <returns>True if the element was present and was removed, false otherwise.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Remove(ref T element)
+        public bool Remove(T element)
         {
-            Validate();
-            var index = IndexOf(element);
-            if (index >= 0)
-            {
-                RemoveAt(index);
-                return true;
-            }
-            return false;
+            return Remove(ref element);
         }
 
         /// <summary>
@@ -378,13 +352,15 @@ namespace BepuUtilities.Collections
             return false;
         }
 
+     
+
         /// <summary>
-        /// Removes an element from the list. Comparisons use the default comparer for the type. Does not preserve the order of elements.
+        /// Removes an element from the list. Does not preserve the order of elements.
         /// </summary>
         /// <param name="element">Element to remove from the list.</param>
         /// <returns>True if the element was present and was removed, false otherwise.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool FastRemove(T element)
+        public bool FastRemoveRef(ref T element)
         {
             Validate();
             var index = IndexOf(element);
@@ -397,21 +373,14 @@ namespace BepuUtilities.Collections
         }
 
         /// <summary>
-        /// Removes an element from the list. Does not preserve the order of elements.
+        /// Removes an element from the list. Comparisons use the default comparer for the type. Does not preserve the order of elements.
         /// </summary>
         /// <param name="element">Element to remove from the list.</param>
         /// <returns>True if the element was present and was removed, false otherwise.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool FastRemove(ref T element)
+        public bool FastRemove(T element)
         {
-            Validate();
-            var index = IndexOf(element);
-            if (index >= 0)
-            {
-                FastRemoveAt(index);
-                return true;
-            }
-            return false;
+            return FastRemoveRef(ref element);
         }
 
         /// <summary>
@@ -448,7 +417,7 @@ namespace BepuUtilities.Collections
                 Span.CopyTo(index + 1, ref Span, index, Count - index);
             }
             //Clear out the former last slot.
-            Span[Count] = default(T);
+            Span[Count] = default;
         }
 
         /// <summary>
@@ -467,7 +436,7 @@ namespace BepuUtilities.Collections
                 Span[index] = Span[Count];
             }
             //Clear out the former last slot.
-            Span[Count] = default(T);
+            Span[Count] = default;
         }
 
         /// <summary>
@@ -498,7 +467,7 @@ namespace BepuUtilities.Collections
                 element = Span[Count];
                 return true;
             }
-            element = default(T);
+            element = default;
             return false;
         }
 
@@ -523,9 +492,9 @@ namespace BepuUtilities.Collections
         /// </returns>
         /// <param name="element">The object to locate in the collection.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Contains(ref T element)
+        public bool ContainsRef(ref T element)
         {
-            return IndexOf(ref element) >= 0;
+            return IndexOfRef(ref element) >= 0;
         }
 
         /// <summary>
@@ -562,11 +531,11 @@ namespace BepuUtilities.Collections
 
         public struct Enumerator : IEnumerator<T>
         {
-            private readonly TSpan span;
+            private readonly Buffer<T> span;
             private readonly int count;
             private int index;
 
-            public Enumerator(ref TSpan span, int count)
+            public Enumerator(ref Buffer<T> span, int count)
             {
                 this.span = span;
                 this.count = count;

@@ -73,7 +73,7 @@ namespace BepuUtilities.Memory
         /// <param name="count">Number of elements in the region in terms of the type.</param>
         /// <returns>A typed buffer.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Buffer<T> Slice<T>(int start, int count)
+        public Buffer<T> Slice<T>(int start, int count) where T : struct
         {
             ValidateRegion<T>(start, count);
             return new Buffer<T>(Memory + start * Unsafe.SizeOf<T>(), count * Unsafe.SizeOf<T>());
@@ -85,7 +85,7 @@ namespace BepuUtilities.Memory
         /// <typeparam name="T">Type of the buffer.</typeparam>
         /// <returns>Typed buffer of maximum extent within the current raw buffer.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Buffer<T> As<T>()
+        public Buffer<T> As<T>() where T : struct
         {
             var count = Length / Unsafe.SizeOf<T>();
             return new Buffer<T>(Memory, count, Id);
@@ -104,14 +104,14 @@ namespace BepuUtilities.Memory
         void ValidateRegion<T>(int startInElements, int countInElements)
         {
             Debug.Assert(startInElements * Unsafe.SizeOf<T>() >= 0, "The start of a region must be within the buffer's extent.");
-            Debug.Assert((startInElements + countInElements) * Unsafe.SizeOf<T>() < Length, "The end of a region must be within the buffer's extent.");
+            Debug.Assert((startInElements + countInElements) * Unsafe.SizeOf<T>() <= Length, "The end of a region must be within the buffer's extent.");
         }
 
         [Conditional("DEBUG")]
         void ValidateRegion(int start, int count)
         {
             Debug.Assert(start >= 0, "The start of a region must be within the buffer's extent.");
-            Debug.Assert(start + count < Length, "The end of a region must be within the buffer's extent.");
+            Debug.Assert(start + count <= Length, "The end of a region must be within the buffer's extent.");
         }
 
         //These are primarily used for debug purposes in the buffer pool.

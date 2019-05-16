@@ -7,6 +7,8 @@ using SharpDX.DXGI;
 using System;
 using DemoRenderer.ShapeDrawing;
 using DemoRenderer.Constraints;
+using BepuUtilities.Memory;
+using DemoUtilities;
 
 namespace DemoRenderer
 {
@@ -19,7 +21,10 @@ namespace DemoRenderer
         //They'll likely be stored in an array indexed by a shape type rather than just being a swarm of properties.
         public RayTracedRenderer<SphereInstance> SphereRenderer { get; private set; }
         public RayTracedRenderer<CapsuleInstance> CapsuleRenderer { get; private set; }
+        public RayTracedRenderer<CylinderInstance> CylinderRenderer { get; private set; }
         public BoxRenderer BoxRenderer { get; private set; }
+        public TriangleRenderer TriangleRenderer { get; private set; }
+        public MeshRenderer MeshRenderer { get; private set; }
         public ShapesExtractor Shapes { get; private set; }
         public LineRenderer LineRenderer { get; private set; }
         public LineExtractor Lines { get; private set; }
@@ -32,19 +37,23 @@ namespace DemoRenderer
 
 
         ParallelLooper looper;
+        BufferPool pool;
 
         Texture2D depthBuffer;
         DepthStencilView dsv;
         //Technically we could get away with rendering directly to the backbuffer, but a dedicated color buffer simplifies some things- 
         //you aren't bound by the requirements of the swapchain's buffer during rendering, and post processing is nicer.
-        //Not entirely necessary for the demos, but hey, you could add MSAA resolves and tonemapping if you wanted?
+        //Not entirely necessary for the demos, but hey, you could add tonemapping if you wanted?
         Texture2D colorBuffer;
-        ShaderResourceView srv;
         RenderTargetView rtv;
+        Texture2D resolvedColorBuffer;
+        ShaderResourceView resolvedSRV;
+        RenderTargetView resolvedRTV;
 
         RasterizerState rasterizerState;
         DepthStencilState opaqueDepthState;
         BlendState opaqueBlendState;
+        BlendState a2cBlendState;
         DepthStencilState uiDepthState;
         BlendState uiBlendState;
 
@@ -57,11 +66,15 @@ namespace DemoRenderer
             {
                 ShaderCache = ShaderCache.Load(stream);
             }
-            Shapes = new ShapesExtractor(looper);
+            pool = new BufferPool();
+            Shapes = new ShapesExtractor(Surface.Device, looper, pool);
             SphereRenderer = new RayTracedRenderer<SphereInstance>(surface.Device, ShaderCache, @"ShapeDrawing\RenderSpheres.hlsl");
             CapsuleRenderer = new RayTracedRenderer<CapsuleInstance>(surface.Device, ShaderCache, @"ShapeDrawing\RenderCapsules.hlsl");
+            CylinderRenderer = new RayTracedRenderer<CylinderInstance>(surface.Device, ShaderCache, @"ShapeDrawing\RenderCylinders.hlsl");
             BoxRenderer = new BoxRenderer(surface.Device, ShaderCache);
-            Lines = new LineExtractor(looper);
+            TriangleRenderer = new TriangleRenderer(surface.Device, ShaderCache);
+            MeshRenderer = new MeshRenderer(surface.Device, Shapes.MeshCache, ShaderCache);
+            Lines = new LineExtractor(pool, looper);
             LineRenderer = new LineRenderer(surface.Device, ShaderCache);
             Background = new BackgroundRenderer(surface.Device, ShaderCache);
             CompressToSwap = new CompressToSwap(surface.Device, ShaderCache);
@@ -93,6 +106,11 @@ namespace DemoRenderer
             var opaqueBlendStateDescription = BlendStateDescription.Default();
             opaqueBlendState = new BlendState(Surface.Device, opaqueBlendStateDescription);
             opaqueBlendState.DebugName = "Opaque Blend State";
+
+            var a2cBlendStateDescription = BlendStateDescription.Default();
+            a2cBlendStateDescription.AlphaToCoverageEnable = true;
+            a2cBlendState = new BlendState(Surface.Device, a2cBlendStateDescription);
+            a2cBlendState.DebugName = "A2C Blend State";
 
             var uiDepthStateDescription = new DepthStencilStateDescription
             {
@@ -132,6 +150,7 @@ namespace DemoRenderer
             TextBatcher.Resolution = resolution;
             UILineBatcher.Resolution = resolution;
 
+            var sampleDescription = new SampleDescription(4, 0);
             depthBuffer = new Texture2D(Surface.Device, new Texture2DDescription
             {
                 Format = Format.R32_Typeless,
@@ -139,7 +158,7 @@ namespace DemoRenderer
                 MipLevels = 1,
                 Width = resolution.X,
                 Height = resolution.Y,
-                SampleDescription = new SampleDescription(1, 0),
+                SampleDescription = sampleDescription,
                 Usage = ResourceUsage.Default,
                 BindFlags = BindFlags.DepthStencil,
                 CpuAccessFlags = CpuAccessFlags.None,
@@ -150,7 +169,7 @@ namespace DemoRenderer
             var depthStencilViewDescription = new DepthStencilViewDescription
             {
                 Flags = DepthStencilViewFlags.None,
-                Dimension = DepthStencilViewDimension.Texture2D,
+                Dimension = DepthStencilViewDimension.Texture2DMultisampled,
                 Format = Format.D32_Float,
                 Texture2D = { MipSlice = 0 }
             };
@@ -158,26 +177,35 @@ namespace DemoRenderer
             dsv.DebugName = "Depth DSV";
 
             //Using a 64 bit texture in the demos for lighting is pretty silly. But we gon do it.
-            colorBuffer = new Texture2D(Surface.Device, new Texture2DDescription
+            var description = new Texture2DDescription
             {
                 Format = Format.R16G16B16A16_Float,
                 ArraySize = 1,
                 MipLevels = 1,
                 Width = resolution.X,
                 Height = resolution.Y,
-                SampleDescription = new SampleDescription(1, 0),
+                SampleDescription = sampleDescription,
                 Usage = ResourceUsage.Default,
                 BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource,
                 CpuAccessFlags = CpuAccessFlags.None,
                 OptionFlags = ResourceOptionFlags.None
-            });
+            };
+            colorBuffer = new Texture2D(Surface.Device, description);
             colorBuffer.DebugName = "Color Buffer";
-
-            srv = new ShaderResourceView(Surface.Device, colorBuffer);
-            srv.DebugName = "Color SRV";
 
             rtv = new RenderTargetView(Surface.Device, colorBuffer);
             rtv.DebugName = "Color RTV";
+            
+            description.SampleDescription = new SampleDescription(1, 0);
+            resolvedColorBuffer = new Texture2D(Surface.Device, description);
+            resolvedColorBuffer.DebugName = "Resolved Color Buffer";
+
+            resolvedSRV = new ShaderResourceView(Surface.Device, resolvedColorBuffer);
+            resolvedSRV.DebugName = "Resolved Color SRV";
+
+            resolvedRTV = new RenderTargetView(Surface.Device, resolvedColorBuffer);
+            resolvedRTV.DebugName = "Resolved Color RTV";
+
         }
 
         public void Render(Camera camera)
@@ -187,24 +215,37 @@ namespace DemoRenderer
                 OnResize();
             }
             var context = Surface.Context;
+            Shapes.MeshCache.FlushPendingUploads(context);
+
             context.Rasterizer.SetViewport(0, 0, Surface.Resolution.X, Surface.Resolution.Y, 0.0f, 1.0f);
 
             //Note reversed depth.
             context.ClearDepthStencilView(dsv, DepthStencilClearFlags.Depth, 0, 0);
-            //The background render is going to fill out the entire color buffer, but having a clear can be useful- e.g. clearing out MSAA history.
-            //We don't use MSAA right now, but the cost of doing this clear is negligible and it avoids a surprise later.
             context.ClearRenderTargetView(rtv, new SharpDX.Mathematics.Interop.RawColor4());
             context.OutputMerger.SetRenderTargets(dsv, rtv);
             context.Rasterizer.State = rasterizerState;
-            context.OutputMerger.SetBlendState(opaqueBlendState);
             context.OutputMerger.SetDepthStencilState(opaqueDepthState);
 
-            SphereRenderer.Render(context, camera, Surface.Resolution, Shapes.spheres.Span.Memory, 0, Shapes.spheres.Count);
-            CapsuleRenderer.Render(context, camera, Surface.Resolution, Shapes.capsules.Span.Memory, 0, Shapes.capsules.Count);
-            BoxRenderer.Render(context, camera, Surface.Resolution, Shapes.boxes.Span.Memory, 0, Shapes.boxes.Count);
-            LineRenderer.Render(context, camera, Surface.Resolution, Lines.lines.Span.Memory, 0, Lines.lines.Count);
+            //All ray traced shapes use analytic coverage writes to get antialiasing.
+            context.OutputMerger.SetBlendState(a2cBlendState);
+            SphereRenderer.Render(context, camera, Surface.Resolution, SpanConverter.AsSpan(Shapes.spheres.Span), 0, Shapes.spheres.Count);
+            CapsuleRenderer.Render(context, camera, Surface.Resolution, SpanConverter.AsSpan(Shapes.capsules.Span), 0, Shapes.capsules.Count);
+            CylinderRenderer.Render(context, camera, Surface.Resolution, SpanConverter.AsSpan(Shapes.cylinders.Span), 0, Shapes.cylinders.Count);
+
+            //Non-raytraced shapes just use regular opaque rendering.
+            context.OutputMerger.SetBlendState(opaqueBlendState);
+            BoxRenderer.Render(context, camera, Surface.Resolution, SpanConverter.AsSpan(Shapes.boxes.Span), 0, Shapes.boxes.Count);
+            TriangleRenderer.Render(context, camera, Surface.Resolution, SpanConverter.AsSpan(Shapes.triangles.Span), 0, Shapes.triangles.Count);
+            MeshRenderer.Render(context, camera, Surface.Resolution, SpanConverter.AsSpan(Shapes.meshes.Span), 0, Shapes.meshes.Count);
+            LineRenderer.Render(context, camera, Surface.Resolution, SpanConverter.AsSpan(Lines.lines.Span), 0, Lines.lines.Count);
 
             Background.Render(context, camera);
+
+            //Resolve MSAA rendering down to a single sample buffer for screenspace work.
+            //Note that we're not bothering to properly handle tonemapping during the resolve. That's going to hurt quality a little, but the demos don't make use of very wide ranges.
+            //(If for some reason you end up expanding the demos to make use of wider HDR, you can make this a custom resolve pretty easily.)
+            context.ResolveSubresource(colorBuffer, 0, resolvedColorBuffer, 0, Format.R16G16B16A16_Float);
+            context.OutputMerger.SetRenderTargets(resolvedRTV);
 
             //Glyph and screenspace line drawing rely on the same premultiplied alpha blending transparency. We'll handle their state out here.
             context.OutputMerger.SetBlendState(uiBlendState);
@@ -216,7 +257,7 @@ namespace DemoRenderer
             //Note that, for now, the compress to swap handles its own depth state since it's the only post processing stage.
             context.OutputMerger.SetBlendState(opaqueBlendState);
             context.Rasterizer.State = rasterizerState;
-            CompressToSwap.Render(context, srv, Surface.RTV);
+            CompressToSwap.Render(context, resolvedSRV, Surface.RTV);
         }
 
         bool disposed;
@@ -228,21 +269,34 @@ namespace DemoRenderer
                 Background.Dispose();
                 CompressToSwap.Dispose();
 
+                Lines.Dispose();
+
                 SphereRenderer.Dispose();
                 CapsuleRenderer.Dispose();
+                CylinderRenderer.Dispose();
+                BoxRenderer.Dispose();
+                TriangleRenderer.Dispose();
+                MeshRenderer.Dispose();
 
                 UILineRenderer.Dispose();
                 GlyphRenderer.Dispose();
 
-                depthBuffer.Dispose();
                 dsv.Dispose();
-                colorBuffer.Dispose();
+                depthBuffer.Dispose();
                 rtv.Dispose();
+                colorBuffer.Dispose();
+                resolvedSRV.Dispose();
+                resolvedRTV.Dispose();
+                resolvedColorBuffer.Dispose();
+
                 rasterizerState.Dispose();
                 opaqueDepthState.Dispose();
                 opaqueBlendState.Dispose();
+                a2cBlendState.Dispose();
                 uiDepthState.Dispose();
                 uiBlendState.Dispose();
+
+                Shapes.Dispose();
             }
         }
 

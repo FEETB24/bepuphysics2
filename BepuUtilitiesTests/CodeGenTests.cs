@@ -17,7 +17,7 @@ namespace BEPUutilitiesTests
             var equal = comparer.Equals(ref a, ref b);
             var hashcode = comparer.Hash(ref a);
             var isPrimitive = SpanHelper.IsPrimitive<int>();
-            if (SpanHelper.IsPrimitive<Boolean>())
+            if (SpanHelper.IsPrimitive<bool>())
             {
                 Console.WriteLine("prim prim");
             }
@@ -39,47 +39,12 @@ namespace BEPUutilitiesTests
 
             Console.WriteLine($"Equality: {equal}, hash: {hashcode}");
         }
-
+        
         [MethodImpl(MethodImplOptions.NoInlining)]
-        unsafe static void TestPointerSpans<T>()
-        {
-            var memory = new byte[2048];
-            fixed (byte* memoryPointer = memory)
-            {
-                var span = new Buffer<T>(memoryPointer, memory.Length);
-                var def = default(T);
-                var index = span.IndexOf(ref def, 0, 128);
-
-                span.CopyTo(0, ref span, 0, 4);
-                var arraySpan = new Array<T>(new T[1024]);
-                span.CopyTo(0, ref arraySpan, 0, 4);
-                arraySpan.CopyTo(0, ref span, 0, 4);
-                arraySpan.CopyTo(0, ref arraySpan, 0, 4);
-
-                Console.WriteLine($"index: {index}");
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        unsafe static void TestArraySpans<T>()
-        {
-            var span = new Array<T>(new T[1024]);
-            var def = default(T);
-            var index = span.IndexOf(ref def, 0, 128);
-
-            span.CopyTo(0, ref span, 0, 4);
-            span.ClearManagedReferences(0, 4);
-
-            Console.WriteLine($"index: {index}");
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        unsafe static void TestQuickInlining()
+        unsafe static void TestQuickInlining(BufferPool pool)
         {
             {
-                var pool = new PassthroughArrayPool<double>();
-                var intPool = new PassthroughArrayPool<int>();
-                QuickSet<double, Array<double>, Array<int>, PrimitiveComparer<double>>.Create(pool, intPool, 2, 3, out var set);
+                var set = new QuickSet<double, PrimitiveComparer<double>>(4, pool);
                 set.AddUnsafely(5);
                 var item = set[0];
                 Console.WriteLine($"Managed Item: {item}");
@@ -92,30 +57,25 @@ namespace BEPUutilitiesTests
 
             {
 
-                var pool = new BufferPool().SpecializeFor<int>();
-                QuickSet<int, Buffer<int>, Buffer<int>, PrimitiveComparer<int>>.Create(pool, pool, 2, 3, out var set);
+                var set = new QuickSet<int, PrimitiveComparer<int>>(4, pool);
                 set.AddUnsafely(5);
                 var item = set[0];
-                pool.Raw.Clear();
             }
 
         }
 
         public static void Test()
         {
+            var pool = new BufferPool();
             TestPrimitiveComparer();
 
             TestDefaultComparer(2, 4);
             TestDefaultComparer(2L, 2L);
             TestDefaultComparer("hey", "sup");
-
-            TestPointerSpans<ulong>();
-            TestPointerSpans<decimal>();
-            TestArraySpans<object>();
-            TestArraySpans<int>();
-
-            TestQuickInlining();
             
+            TestQuickInlining(pool);
+            pool.Clear();
+
         }
     }
 }

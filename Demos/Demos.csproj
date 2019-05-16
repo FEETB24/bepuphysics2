@@ -1,39 +1,33 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp2.0</TargetFramework>
+    <TargetFramework>netcoreapp2.1</TargetFramework>
     <RuntimeIdentifiers>win10-x64</RuntimeIdentifiers>
-    <!--<RuntimeFrameworkVersion>2.1.0-preview2-25616-02</RuntimeFrameworkVersion>-->
+    <!--<RuntimeFrameworkVersion>2.2.0-preview1-26620-03</RuntimeFrameworkVersion>-->
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <Configurations>Debug;Release;ReleaseStrip</Configurations>
-    <LangVersion>7.2</LangVersion>
+    <LangVersion>latest</LangVersion>
+    <!--<TieredCompilation>false</TieredCompilation>-->
   </PropertyGroup>
 
   <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
-    <Exec Condition="'$(Configuration)'=='Debug'" Command="dotnet &quot;$(ProjectDir)..\DemoContentBuilder\bin\x64\$(Configuration)\netcoreapp2.0\DemoContentBuilder.dll&quot; &quot;$(ProjectDir)$(ProjectName).content&quot; -debug" />
-    <Exec Condition="'$(Configuration)'!='Debug'" Command="dotnet &quot;$(ProjectDir)..\DemoContentBuilder\bin\x64\Release\netcoreapp2.0\DemoContentBuilder.dll&quot; &quot;$(ProjectDir)$(ProjectName).content&quot;" />
+    <Exec Condition="'$(Configuration)'=='Debug'" Command="dotnet &quot;$(ProjectDir)..\DemoContentBuilder\bin\x64\$(Configuration)\netcoreapp2.1\DemoContentBuilder.dll&quot; &quot;$(ProjectDir)$(ProjectName).content&quot; -debug" />
+    <Exec Condition="'$(Configuration)'!='Debug'" Command="dotnet &quot;$(ProjectDir)..\DemoContentBuilder\bin\x64\Release\netcoreapp2.1\DemoContentBuilder.dll&quot; &quot;$(ProjectDir)$(ProjectName).content&quot;" />
   </Target>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" />
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x86'" />
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
     <Optimize>true</Optimize>
-    <DefineConstants>TRACE;RELEASE;NETCOREAPP2_0</DefineConstants>
-    <DebugType>full</DebugType>
+    <DefineConstants>TRACE;RELEASE</DefineConstants>
+    <DebugType>embedded</DebugType>
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseStrip|AnyCPU'">
+  <PropertyGroup Condition="'$(Configuration)'=='ReleaseStrip'">
     <Optimize>true</Optimize>
-    <DefineConstants>TRACE;RELEASE;NETCOREAPP2_0</DefineConstants>
-    <DebugType>full</DebugType>
-    <DebugSymbols>true</DebugSymbols>
-    <Optimize>true</Optimize>
+    <DefineConstants>TRACE;RELEASE</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
     <Optimize>false</Optimize>
   </PropertyGroup>
 
@@ -48,5 +42,28 @@
   <ItemGroup>
     <EmbeddedResource Include="Demos.contentarchive" />
   </ItemGroup>
+
+
+  <ItemGroup>
+    <None Update="Demos\Characters\CharacterMotionConstraint.tt">
+      <Generator>TextTemplatingFileGenerator</Generator>
+      <LastGenOutput>CharacterMotionConstraint.cs</LastGenOutput>
+    </None>
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <Service Include="{508349b6-6b84-4df5-91f0-309beebad82d}" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <Compile Update="Demos\Characters\CharacterMotionConstraint.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>CharacterMotionConstraint.tt</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
 
 </Project>

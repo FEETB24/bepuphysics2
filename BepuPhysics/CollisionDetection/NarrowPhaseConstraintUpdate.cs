@@ -99,8 +99,6 @@ namespace BepuPhysics.CollisionDetection
             ref var newImpulses = ref Unsafe.As<TContactImpulses, float>(ref newImpulsesContainer);
             //Note that the pointer casts below are not actually GC holes:
             //contact manifolds passed down here from the collision batcher and friends are all stored either on the stack or in pinned buffers.
-
-
             int unmatchedCount = 0;
             for (int i = 0; i < newContactCount; ++i)
             {
@@ -157,7 +155,7 @@ namespace BepuPhysics.CollisionDetection
             }
             AddConstraint(workerIndex, manifoldConstraintType, ref pair, constraintCacheIndex, ref newImpulses, bodyHandles, ref description);
         }
-
+        
         public unsafe void UpdateConstraint<TBodyHandles, TDescription, TContactImpulses, TCollisionCache, TConstraintCache>(int workerIndex, ref CollidablePair pair,
             int manifoldTypeAsConstraintType, ref TConstraintCache newConstraintCache, ref TCollisionCache collisionCache,
             ref TDescription description, TBodyHandles bodyHandles)
@@ -205,7 +203,7 @@ namespace BepuPhysics.CollisionDetection
                     Unsafe.As<TConstraintCache, int>(ref newConstraintCache) = constraintHandle;
                     PairCache.Update(workerIndex, index, ref pointers, ref collisionCache, ref newConstraintCache);
                     //There exists a constraint and it has the same type as the manifold. Directly apply the new description and impulses.
-                    Solver.ApplyDescription(ref constraintReference, ref description);
+                    Solver.ApplyDescriptionWithoutWaking(ref constraintReference, ref description);
                     accessor.ScatterNewImpulses(ref constraintReference, ref newImpulses);
                 }
                 else
@@ -237,7 +235,7 @@ namespace BepuPhysics.CollisionDetection
                     if (locationA.SetIndex != locationB.SetIndex)
                     {
                         ref var overlapWorker = ref overlapWorkers[workerIndex];
-                        overlapWorker.PendingSetAwakenings.Add(locationA.SetIndex > 0 ? locationA.SetIndex : locationB.SetIndex, overlapWorker.Batcher.Pool.SpecializeFor<int>());
+                        overlapWorker.PendingSetAwakenings.Add(locationA.SetIndex > 0 ? locationA.SetIndex : locationB.SetIndex, overlapWorker.Batcher.Pool);
                     }
                 }
             }

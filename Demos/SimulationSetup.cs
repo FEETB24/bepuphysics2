@@ -82,7 +82,7 @@ namespace Demos
         {
             offsetB = b.Position - a.Position;
             y = Vector3.Normalize(-offsetB);
-            Quaternion.TransformUnitZ(ref a.Orientation, out var ax);
+            Quaternion.TransformUnitZ(a.Orientation, out var ax);
             x = Vector3.Cross(ax, y);
             var xLength = x.Length();
             if (xLength > 1e-7)
@@ -91,7 +91,7 @@ namespace Demos
             }
             else
             {
-                Quaternion.TransformUnitX(ref a.Orientation, out var az);
+                Quaternion.TransformUnitX(a.Orientation, out var az);
                 x = Vector3.Normalize(Vector3.Cross(az, y));
             }
             z = Vector3.Cross(x, y);
@@ -113,7 +113,7 @@ namespace Demos
                     {
                         bodyBuilder.Build(columnIndex, rowIndex, sliceIndex, out var bodyDescription);
                         bodyGetter.TryGetId(columnIndex, rowIndex, sliceIndex, out var id);
-                        bodyHandles[id] = simulation.Bodies.Add(ref bodyDescription);
+                        bodyHandles[id] = simulation.Bodies.Add(bodyDescription);
                     }
                 }
             }
@@ -144,8 +144,8 @@ namespace Demos
             var bodyCount = width * height * length;
             simulation = Simulation.Create(
                 new BufferPool(),
-                new TestCallbacks(),
-                new SimulationAllocationSizes
+                new DemoNarrowPhaseCallbacks(), new DemoPoseIntegratorCallbacks(new Vector3(0, -10, 0)),
+                initialAllocationSizes: new SimulationAllocationSizes
                 {
                     Bodies = bodyCount,
                     ShapesPerType = 128,

@@ -29,16 +29,16 @@ namespace BepuPhysics.Collidables
             /// <summary>
             /// Inertia tensor associated with the child. If inertia is all zeroes, it is interpreted as infinite.
             /// </summary>
-            public Triangular3x3 Inertia;
+            public Symmetric3x3 Inertia;
         }
 
-        public QuickList<Child, Buffer<Child>> Children;
+        public QuickList<Child> Children;
 
         public CompoundBuilder(BufferPool pool, Shapes shapes, int builderCapacity)
         {
             Pool = pool;
             Shapes = shapes;
-            QuickList<Child, Buffer<Child>>.Create(Pool.SpecializeFor<Child>(), builderCapacity, out Children);
+            Children = new QuickList<Child>(builderCapacity, Pool);
         }
 
         /// <summary>
@@ -49,15 +49,14 @@ namespace BepuPhysics.Collidables
         /// <param name="localPose">Pose of the shape in the compound's local space.</param>
         /// <param name="weight">Weight of the shape. If the compound is interpreted as a dynamic, this will be used as the mass and scales the inertia tensor. 
         /// Otherwise, it is used for recentering.</param>
-        public void Add<TShape>(ref TShape shape, ref RigidPose localPose, float weight) where TShape : struct, IConvexShape
+        public void Add<TShape>(in TShape shape, in RigidPose localPose, float weight) where TShape : struct, IConvexShape
         {
-            var shapeIndex = Shapes.Add(ref shape);
-            ref var child = ref Children.Allocate(Pool.SpecializeFor<Child>());
+            ref var child = ref Children.Allocate(Pool);
             child.LocalPose = localPose;
-            child.ShapeIndex = Shapes.Add(ref shape);
+            child.ShapeIndex = Shapes.Add(shape);
             child.Weight = weight;
             shape.ComputeInertia(weight, out var inertia);
-            Triangular3x3.SymmetricInvert(ref inertia.InverseInertiaTensor, out child.Inertia);
+            Symmetric3x3.Invert(inertia.InverseInertiaTensor, out child.Inertia);
         }
 
         /// <summary>
@@ -67,12 +66,11 @@ namespace BepuPhysics.Collidables
         /// <param name="shape">Shape to add.</param>
         /// <param name="localPose">Pose of the shape in the compound's local space.</param>
         /// <param name="weight">Weight of the shape. If the compound is interpreted as a dynamic, this will be used as the mass. Otherwise, it is used for recentering.</param>
-        public void AddForKinematic<TShape>(ref TShape shape, ref RigidPose localPose, float weight) where TShape : struct, IConvexShape
+        public void AddForKinematic<TShape>(in TShape shape, in RigidPose localPose, float weight) where TShape : struct, IConvexShape
         {
-            var shapeIndex = Shapes.Add(ref shape);
-            ref var child = ref Children.Allocate(Pool.SpecializeFor<Child>());
+            ref var child = ref Children.Allocate(Pool);
             child.LocalPose = localPose;
-            child.ShapeIndex = Shapes.Add(ref shape);
+            child.ShapeIndex = Shapes.Add(shape);
             child.Weight = weight;
             child.Inertia = default;
         }
@@ -84,18 +82,18 @@ namespace BepuPhysics.Collidables
         /// <param name="localPose">Pose of the shape in the compound's local space.</param>
         /// <param name="weight">Weight of the shape. If the compound is interpreted as a dynamic, this will be used as the mass. Otherwise, it is used for recentering.</param>
         /// <param name="inverseInertia">Inverse inertia tensor of the shape being added. This is assumed to already be scaled as desired by the weight.</param>
-        public void Add(TypedIndex shape, ref RigidPose localPose, ref Triangular3x3 inverseInertia, float weight)
+        public void Add(TypedIndex shape, in RigidPose localPose, in Symmetric3x3 inverseInertia, float weight)
         {
-            ref var child = ref Children.Allocate(Pool.SpecializeFor<Child>());
+            ref var child = ref Children.Allocate(Pool);
             child.LocalPose = localPose;
             child.ShapeIndex = shape;
             child.Weight = weight;
             //This assumes the given inertia is nonsingular. That should be a valid assumption, unless the user is trying to supply an axis-locked tensor.
             //For such a use case, it's best to just lock the axis after computing a 'normal' inertia. 
-            Debug.Assert(Triangular3x3.SymmetricDeterminant(ref inverseInertia) > 0,
+            Debug.Assert(Symmetric3x3.Determinant(inverseInertia) > 0,
                 "Shape inertia tensors should be invertible. If making an axis-locked compound, consider locking the axis on the completed inertia. " +
                 "If making a kinematic, consider using the overload which takes no inverse inertia.");
-            Triangular3x3.SymmetricInvert(ref inverseInertia, out child.Inertia);
+            Symmetric3x3.Invert(inverseInertia, out child.Inertia);
         }
 
         /// <summary>
@@ -104,9 +102,9 @@ namespace BepuPhysics.Collidables
         /// <param name="shape">Index of the shape to add.</param>
         /// <param name="localPose">Pose of the shape in the compound's local space.</param>
         /// <param name="weight">Weight of the shape used for computing the center of rotation.</param>
-        public void AddForKinematic(TypedIndex shape, ref RigidPose localPose, float weight)
+        public void AddForKinematic(TypedIndex shape, in RigidPose localPose, float weight)
         {
-            ref var child = ref Children.Allocate(Pool.SpecializeFor<Child>());
+            ref var child = ref Children.Allocate(Pool);
             child.LocalPose = localPose;
             child.ShapeIndex = shape;
             child.Weight = weight;
@@ -114,7 +112,7 @@ namespace BepuPhysics.Collidables
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void GetOffsetInertiaContribution(ref Vector3 offset, float mass, out Triangular3x3 contribution)
+        public static void GetOffsetInertiaContribution(in Vector3 offset, float mass, out Symmetric3x3 contribution)
         {
             var innerProduct = Vector3.Dot(offset, offset);
             contribution.XX = mass * (innerProduct - offset.X * offset.X);
@@ -145,23 +143,20 @@ namespace BepuPhysics.Collidables
 
             inertia.InverseMass = 1f / totalWeight;
             center *= inertia.InverseMass;
-            Pool.SpecializeFor<CompoundChild>().Take(Children.Count, out children);
-            //Note that the buffer returned by the pool is only guaranteed to be at least as large as the requested size.
-            //The compound expects the buffer's length to exactly match the number of children, so we explicitly slice to avoid relying on the size of the returned buffer.
-            children = children.Slice(0, Children.Count);
-            Triangular3x3 summedInertia = default;
+            Pool.Take(Children.Count, out children);
+            Symmetric3x3 summedInertia = default;
             for (int i = 0; i < Children.Count; ++i)
             {
                 ref var sourceChild = ref Children[i];
                 ref var targetChild = ref children[i];
                 targetChild.LocalPose.Position = sourceChild.LocalPose.Position - center;
-                GetOffsetInertiaContribution(ref targetChild.LocalPose.Position, sourceChild.Weight, out var contribution);
-                Triangular3x3.Add(ref contribution, ref summedInertia, out summedInertia);
-                Triangular3x3.Add(ref summedInertia, ref sourceChild.Inertia, out summedInertia);
+                GetOffsetInertiaContribution(targetChild.LocalPose.Position, sourceChild.Weight, out var contribution);
+                Symmetric3x3.Add(contribution, summedInertia, out summedInertia);
+                Symmetric3x3.Add(summedInertia, sourceChild.Inertia, out summedInertia);
                 targetChild.LocalPose.Orientation = sourceChild.LocalPose.Orientation;
                 targetChild.ShapeIndex = sourceChild.ShapeIndex;
             }
-            Triangular3x3.SymmetricInvert(ref summedInertia, out inertia.InverseInertiaTensor);
+            Symmetric3x3.Invert(summedInertia, out inertia.InverseInertiaTensor);
         }
 
         /// <summary>
@@ -179,23 +174,20 @@ namespace BepuPhysics.Collidables
             Debug.Assert(totalWeight > 0, "The compound as a whole must have nonzero weight when creating a dynamic compound.");
 
             inertia.InverseMass = 1f / totalWeight;
-            Pool.SpecializeFor<CompoundChild>().Take(Children.Count, out children);
-            //Note that the buffer returned by the pool is only guaranteed to be at least as large as the requested size.
-            //The compound expects the buffer's length to exactly match the number of children, so we explicitly slice to avoid relying on the size of the returned buffer.
-            children = children.Slice(0, Children.Count);
-            Triangular3x3 summedInertia = default;
+            Pool.Take(Children.Count, out children);
+            Symmetric3x3 summedInertia = default;
             for (int i = 0; i < Children.Count; ++i)
             {
                 ref var sourceChild = ref Children[i];
                 ref var targetChild = ref children[i];
                 targetChild.LocalPose.Position = sourceChild.LocalPose.Position;
-                GetOffsetInertiaContribution(ref targetChild.LocalPose.Position, sourceChild.Weight, out var contribution);
-                Triangular3x3.Add(ref contribution, ref summedInertia, out summedInertia);
-                Triangular3x3.Add(ref summedInertia, ref sourceChild.Inertia, out summedInertia);
+                GetOffsetInertiaContribution(targetChild.LocalPose.Position, sourceChild.Weight, out var contribution);
+                Symmetric3x3.Add(contribution, summedInertia, out summedInertia);
+                Symmetric3x3.Add(summedInertia, sourceChild.Inertia, out summedInertia);
                 targetChild.LocalPose.Orientation = sourceChild.LocalPose.Orientation;
                 targetChild.ShapeIndex = sourceChild.ShapeIndex;
             }
-            Triangular3x3.SymmetricInvert(ref summedInertia, out inertia.InverseInertiaTensor);
+            Symmetric3x3.Invert(summedInertia, out inertia.InverseInertiaTensor);
         }
 
         /// <summary>
@@ -218,10 +210,7 @@ namespace BepuPhysics.Collidables
 
             var inverseWeight = 1f / totalWeight;
             center *= inverseWeight;
-            Pool.SpecializeFor<CompoundChild>().Take(Children.Count, out children);
-            //Note that the buffer returned by the pool is only guaranteed to be at least as large as the requested size.
-            //The compound expects the buffer's length to exactly match the number of children, so we explicitly slice to avoid relying on the size of the returned buffer.
-            children = children.Slice(0, Children.Count);
+            Pool.Take(Children.Count, out children);
             for (int i = 0; i < Children.Count; ++i)
             {
                 ref var sourceChild = ref Children[i];
@@ -240,10 +229,7 @@ namespace BepuPhysics.Collidables
         /// <param name="center">Computed center of rotation based on the poses and weights of accumulated children.</param>
         public void BuildKinematicCompound(out Buffer<CompoundChild> children)
         {
-            Pool.SpecializeFor<CompoundChild>().Take(Children.Count, out children);
-            //Note that the buffer returned by the pool is only guaranteed to be at least as large as the requested size.
-            //The compound expects the buffer's length to exactly match the number of children, so we explicitly slice to avoid relying on the size of the returned buffer.
-            children = children.Slice(0, Children.Count);
+            Pool.Take(Children.Count, out children);
             for (int i = 0; i < Children.Count; ++i)
             {
                 ref var sourceChild = ref Children[i];
@@ -267,7 +253,7 @@ namespace BepuPhysics.Collidables
         /// </summary>
         public void Dispose()
         {
-            Children.Dispose(Pool.SpecializeFor<Child>());
+            Children.Dispose(Pool);
         }
     }
 }

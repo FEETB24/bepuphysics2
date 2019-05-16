@@ -8,20 +8,22 @@ using System.Numerics;
 using BepuUtilities.Memory;
 using BepuUtilities.Collections;
 using System.Diagnostics;
+using DemoContentLoader;
 
 namespace Demos.Demos
 {
     public class FountainStressTestDemo : Demo
     {
-        QuickQueue<StaticDescription, Buffer<StaticDescription>> removedStatics;
-        QuickQueue<int, Buffer<int>> dynamicHandles;
+        QuickQueue<StaticDescription> removedStatics;
+        QuickQueue<int> dynamicHandles;
         Random random;
-        public unsafe override void Initialize(Camera camera)
+        public unsafe override void Initialize(ContentArchive content, Camera camera)
         {
             camera.Position = new Vector3(-15f, 20, -15f);
             camera.Yaw = MathHelper.Pi * 3f / 4;
             camera.Pitch = MathHelper.Pi * 0.1f;
-            Simulation = Simulation.Create(BufferPool, new TestCallbacks(),
+            //Using minimum sized allocations forces as many resizes as possible.
+            Simulation = Simulation.Create(BufferPool, new DemoNarrowPhaseCallbacks(), new DemoPoseIntegratorCallbacks(new Vector3(0, -10, 0)), initialAllocationSizes:
             new SimulationAllocationSizes
             {
                 Bodies = 1,
@@ -33,17 +35,22 @@ namespace Demos.Demos
                 Statics = 1
             });
 
-            Simulation.PoseIntegrator.Gravity = new Vector3(0, -10, 0);
-            Simulation.Deterministic = false;
+            Simulation.Deterministic = true;
 
-
-            var staticShape = new Sphere(6);
-            var staticShapeIndex = Simulation.Shapes.Add(ref staticShape);
-            const int staticGridWidthInSpheres = 128;
+            const int planeWidth = 8;
+            const int planeHeight = 8;
+            DemoMeshHelper.CreateDeformedPlane(planeWidth, planeHeight,
+                (int x, int y) =>
+                {
+                    Vector2 offsetFromCenter = new Vector2(x - planeWidth / 2, y - planeHeight / 2);
+                    return new Vector3(offsetFromCenter.X, MathF.Cos(x / 4f) * MathF.Sin(y / 4f) - 0.2f * offsetFromCenter.LengthSquared(), offsetFromCenter.Y);
+                }, new Vector3(2, 1, 2), BufferPool, out var staticShape);
+            var staticShapeIndex = Simulation.Shapes.Add(staticShape);
+            const int staticGridWidthInInstances = 128;
             const float staticSpacing = 8;
-            for (int i = 0; i < staticGridWidthInSpheres; ++i)
+            for (int i = 0; i < staticGridWidthInInstances; ++i)
             {
-                for (int j = 0; j < staticGridWidthInSpheres; ++j)
+                for (int j = 0; j < staticGridWidthInInstances; ++j)
                 {
                     var staticDescription = new StaticDescription
                     {
@@ -56,19 +63,19 @@ namespace Demos.Demos
                         Pose = new RigidPose
                         {
                             Position = new Vector3(
-                            -staticGridWidthInSpheres * staticSpacing * 0.5f + i * staticSpacing,
+                            -staticGridWidthInInstances * staticSpacing * 0.5f + i * staticSpacing,
                             -4 + 4 * (float)Math.Cos(i * 0.3) + 4 * (float)Math.Cos(j * 0.3),
-                            -staticGridWidthInSpheres * staticSpacing * 0.5f + j * staticSpacing),
+                            -staticGridWidthInInstances * staticSpacing * 0.5f + j * staticSpacing),
                             Orientation = BepuUtilities.Quaternion.Identity
                         }
                     };
-                    Simulation.Statics.Add(ref staticDescription);
+                    Simulation.Statics.Add(staticDescription);
                 }
             }
 
             //A bunch of kinematic balls do acrobatics as an extra stressor.
             var kinematicShape = new Sphere(8);
-            var kinematicShapeIndex = Simulation.Shapes.Add(ref staticShape);
+            var kinematicShapeIndex = Simulation.Shapes.Add(kinematicShape);
             var kinematicCount = 64;
             var anglePerKinematic = MathHelper.TwoPi / kinematicCount;
             var startingRadius = 256;
@@ -94,11 +101,11 @@ namespace Demos.Demos
                     },
                     Activity = new BodyActivityDescription { SleepThreshold = 0, MinimumTimestepCountUnderThreshold = 4 },
                 };
-                kinematicHandles[i] = Simulation.Bodies.Add(ref description);
+                kinematicHandles[i] = Simulation.Bodies.Add(description);
             }
 
-            QuickQueue<int, Buffer<int>>.Create(BufferPool.SpecializeFor<int>(), 65536, out dynamicHandles);
-            QuickQueue<StaticDescription, Buffer<StaticDescription>>.Create(BufferPool.SpecializeFor<StaticDescription>(), 512, out removedStatics);
+            dynamicHandles = new QuickQueue<int>(65536, BufferPool);
+            removedStatics = new QuickQueue<StaticDescription>(512, BufferPool);
             random = new Random(5);
         }
 
@@ -106,7 +113,73 @@ namespace Demos.Demos
         double t;
         int[] kinematicHandles;
 
-        public override void Update(Input input, float dt)
+        void AddConvexShape<TConvex>(in TConvex convex, out TypedIndex shapeIndex, out BodyInertia inertia) where TConvex : struct, IConvexShape
+        {
+            shapeIndex = Simulation.Shapes.Add(convex);
+            convex.ComputeInertia(1, out inertia);
+        }
+
+        ConvexHull CreateRandomHull()
+        {
+            const int pointCount = 32;
+            var points = new QuickList<Vector3>(pointCount, BufferPool);
+            for (int i = 0; i < pointCount; ++i)
+            {
+                points.AllocateUnsafely() = new Vector3(1 * (float)random.NextDouble(), 0.5f * (float)random.NextDouble(), 1.5f * (float)random.NextDouble());
+            }
+            var hull = new ConvexHull(points.Span.Slice(points.Count), BufferPool, out _);
+            points.Dispose(BufferPool);
+            return hull;
+        }
+
+        void CreateRandomCompound(out Buffer<CompoundChild> children, out BodyInertia inertia)
+        {
+            using (var compoundBuilder = new CompoundBuilder(BufferPool, Simulation.Shapes, 6))
+            {
+                var childCount = random.Next(2, 6);
+                for (int i = 0; i < childCount; ++i)
+                {
+                    TypedIndex shapeIndex;
+                    BodyInertia childInertia;
+                    switch (random.Next(0, 5))
+                    {
+                        default:
+                            AddConvexShape(new Sphere(0.35f + 0.35f * (float)random.NextDouble()), out shapeIndex, out childInertia);
+                            break;
+                        case 1:
+                            AddConvexShape(new Capsule(
+                                0.35f + 0.35f * (float)random.NextDouble(),
+                                0.35f + 0.35f * (float)random.NextDouble()), out shapeIndex, out childInertia);
+                            break;
+                        case 2:
+                            AddConvexShape(new Box(
+                                0.35f + 0.35f * (float)random.NextDouble(),
+                                0.35f + 0.35f * (float)random.NextDouble(),
+                                0.35f + 0.35f * (float)random.NextDouble()), out shapeIndex, out childInertia);
+                            break;
+                        case 3:
+                            AddConvexShape(new Cylinder(0.1f + (float)random.NextDouble(), 0.2f + (float)random.NextDouble()), out shapeIndex, out childInertia);
+                            break;
+                        case 4:
+                            AddConvexShape(CreateRandomHull(), out shapeIndex, out childInertia);
+                            break;
+                    }
+                    RigidPose localPose;
+                    localPose.Position = new Vector3(2, 2, 2) * (0.5f * new Vector3((float)random.NextDouble(), (float)random.NextDouble(), (float)random.NextDouble()) - Vector3.One);
+                    float orientationLengthSquared;
+                    do
+                    {
+                        localPose.Orientation = new BepuUtilities.Quaternion((float)random.NextDouble(), (float)random.NextDouble(), (float)random.NextDouble(), (float)random.NextDouble());
+                    }
+                    while ((orientationLengthSquared = localPose.Orientation.LengthSquared()) < 1e-9f);
+                    BepuUtilities.Quaternion.Scale(localPose.Orientation, 1f / MathF.Sqrt(orientationLengthSquared), out localPose.Orientation);
+                    compoundBuilder.Add(shapeIndex, localPose, childInertia.InverseInertiaTensor, 1);
+                }
+                compoundBuilder.BuildDynamicCompound(out children, out inertia, out var center);
+            }
+        }
+
+        public override void Update(Window window, Camera camera, Input input, float dt)
         {
             var timestepDuration = 1f / 60f;
             time += timestepDuration;
@@ -168,7 +241,7 @@ namespace Demos.Demos
                 var indexToRemove = random.Next(Simulation.Statics.Count);
                 Simulation.Statics.GetDescription(Simulation.Statics.IndexToHandle[indexToRemove], out var staticDescription);
                 Simulation.Statics.RemoveAt(indexToRemove);
-                removedStatics.Enqueue(ref staticDescription, BufferPool.SpecializeFor<StaticDescription>());
+                removedStatics.Enqueue(staticDescription, BufferPool);
             }
 
 
@@ -178,52 +251,83 @@ namespace Demos.Demos
             {
                 Debug.Assert(removedStatics.Count > 0);
                 var staticDescription = removedStatics.Dequeue();
-                Simulation.Statics.Add(ref staticDescription);
+                Simulation.Statics.Add(staticDescription);
             }
 
 
-            //Spray some balls!
-            int newBallCount = 8;
+            //Spray some shapes!
+            int newShapeCount = 8;
             var spawnLocation = new Vector3(0, 10, 0);
-            for (int i = 0; i < newBallCount; ++i)
+            for (int i = 0; i < newShapeCount; ++i)
             {
                 //For the sake of the stress test, every single body has its own shape that gets removed when the body is removed.
-                var shape = new Sphere(0.35f + 0.35f * (float)random.NextDouble());
-                var shapeIndex = Simulation.Shapes.Add(ref shape);
+                TypedIndex shapeIndex;
+                BodyInertia inertia;
+                switch (random.Next(0, 7))
+                {
+                    default:
+                        {
+                            AddConvexShape(new Sphere(0.35f + 0.35f * (float)random.NextDouble()), out shapeIndex, out inertia);
+                        }
+                        break;
+                    case 1:
+                        {
+                            AddConvexShape(new Capsule(
+                                0.35f + 0.35f * (float)random.NextDouble(),
+                                0.35f + 0.35f * (float)random.NextDouble()), out shapeIndex, out inertia);
+                        }
+                        break;
+                    case 2:
+                        {
+                            AddConvexShape(new Box(
+                                0.35f + 0.6f * (float)random.NextDouble(),
+                                0.35f + 0.6f * (float)random.NextDouble(),
+                                0.35f + 0.6f * (float)random.NextDouble()), out shapeIndex, out inertia);
+                        }
+                        break;
+                    case 3:
+                        {
+                            AddConvexShape(new Cylinder(0.1f + 0.5f * (float)random.NextDouble(), 0.2f + (float)random.NextDouble()), out shapeIndex, out inertia);
+                        }
+                        break;
+                    case 4:
+                        {
+                            AddConvexShape(CreateRandomHull(), out shapeIndex, out inertia);
+                        }
+                        break;
+                    case 5:
+                        {
+                            CreateRandomCompound(out var children, out inertia);
+                            shapeIndex = Simulation.Shapes.Add(new Compound(children));
+                        }
+                        break;
+                    case 6:
+                        {
+                            CreateRandomCompound(out var children, out inertia);
+                            shapeIndex = Simulation.Shapes.Add(new BigCompound(children, Simulation.Shapes, BufferPool));
+                        }
+                        break;
+                }
+
                 var description = new BodyDescription
                 {
-                    Pose = new RigidPose
-                    {
-                        Position = spawnLocation,
-                        Orientation = BepuUtilities.Quaternion.Identity
-                    },
-                    LocalInertia = new BodyInertia { InverseMass = 1 },
-                    Collidable = new CollidableDescription
-                    {
-                        Continuity = new ContinuousDetectionSettings(),
-                        SpeculativeMargin = 0.1f,
-                        Shape = shapeIndex
-                    },
-                    Activity = new BodyActivityDescription
-                    {
-                        SleepThreshold = .1f,
-                        MinimumTimestepCountUnderThreshold = 32
-                    }
+                    Pose = new RigidPose(spawnLocation),
+                    LocalInertia = inertia,
+                    Collidable = new CollidableDescription(shapeIndex, 5f),
+                    Activity = new BodyActivityDescription(0.1f),
+                    Velocity = new BodyVelocity(new Vector3(-30 + 60 * (float)random.NextDouble(), 75, -30 + 60 * (float)random.NextDouble()), default)
                 };
-
-                var inverseInertia = description.LocalInertia.InverseMass * (1f / (shape.Radius * shape.Radius * 2 / 3));
-                description.LocalInertia.InverseInertiaTensor.XX = inverseInertia;
-                description.LocalInertia.InverseInertiaTensor.YY = inverseInertia;
-                description.LocalInertia.InverseInertiaTensor.ZZ = inverseInertia;
-
-
-                description.Velocity.Linear = new Vector3(-20 + 40 * (float)random.NextDouble(), 75, -20 + 40 * (float)random.NextDouble());
-
-                dynamicHandles.Enqueue(Simulation.Bodies.Add(ref description), BufferPool.SpecializeFor<int>());
+                switch (random.Next(3))
+                {
+                    case 0: description.Collidable.Continuity = ContinuousDetectionSettings.Discrete; break;
+                    case 1: description.Collidable.Continuity = ContinuousDetectionSettings.Passive; break;
+                    case 2: description.Collidable.Continuity = ContinuousDetectionSettings.Continuous(1e-3f, 1e-3f); break;
+                }
+                dynamicHandles.Enqueue(Simulation.Bodies.Add(description), BufferPool);
 
             }
             int targetAsymptote = 65536;
-            var removalCount = (int)(dynamicHandles.Count * (newBallCount / (float)targetAsymptote));
+            var removalCount = (int)(dynamicHandles.Count * (newShapeCount / (float)targetAsymptote));
             for (int i = 0; i < removalCount; ++i)
             {
                 if (dynamicHandles.TryDequeue(out var handle))
@@ -232,14 +336,17 @@ namespace Demos.Demos
                     //Every body has a unique shape, so we need to remove shapes with bodies.
                     var shapeIndex = Simulation.Bodies.Sets[bodyLocation.SetIndex].Collidables[bodyLocation.Index].Shape;
                     Simulation.Bodies.Remove(handle);
-                    Simulation.Shapes.Remove(shapeIndex);
+                    Simulation.Shapes.RecursivelyRemoveAndDispose(shapeIndex, BufferPool);
                 }
                 else
                 {
                     break;
                 }
             }
-            base.Update(input, dt);
+            base.Update(window, camera, input, dt);
+
+            if (input != null && input.WasPushed(OpenTK.Input.Key.P))
+                GC.Collect(int.MaxValue, GCCollectionMode.Forced, true, true);
 
         }
 

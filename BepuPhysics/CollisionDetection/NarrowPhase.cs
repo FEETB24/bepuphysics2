@@ -79,6 +79,7 @@ namespace BepuPhysics.CollisionDetection
         RemoveConstraintsFromBodyLists,
         ReturnConstraintHandles,
         RemoveConstraintFromBatchReferencedHandles,
+        RemoveConstraintsFromFallbackBatch,
         RemoveConstraintFromTypeBatch,
         FlushPairCacheChanges
     }
@@ -97,12 +98,14 @@ namespace BepuPhysics.CollisionDetection
         public Statics Statics;
         public Solver Solver;
         public Shapes Shapes;
+        public SweepTaskRegistry SweepTaskRegistry;
         public CollisionTaskRegistry CollisionTaskRegistry;
         public ConstraintRemover ConstraintRemover;
         internal FreshnessChecker FreshnessChecker;
         //TODO: It is possible that some types will benefit from per-overlap data, like separating axes. For those, we should have type-dedicated overlap dictionaries.
         //The majority of type pairs, however, only require a constraint handle.
         public PairCache PairCache;
+        internal float timestepDuration;
 
         internal ContactConstraintAccessor[] contactConstraintAccessors;
         public void RegisterContactConstraintAccessor(ContactConstraintAccessor contactConstraintAccessor)
@@ -110,7 +113,7 @@ namespace BepuPhysics.CollisionDetection
             var id = contactConstraintAccessor.ConstraintTypeId;
             if (contactConstraintAccessors == null || contactConstraintAccessors.Length <= id)
                 contactConstraintAccessors = new ContactConstraintAccessor[id + 1];
-            if(contactConstraintAccessors[id] != null)
+            if (contactConstraintAccessors[id] != null)
             {
                 throw new InvalidOperationException($"Cannot register accessor for type id {id}; it is already registered by {contactConstraintAccessors[id]}.");
             }
@@ -122,8 +125,20 @@ namespace BepuPhysics.CollisionDetection
             flushWorkerLoop = FlushWorkerLoop;
         }
 
-        public void Prepare(IThreadDispatcher threadDispatcher = null)
+        /// <summary>
+        /// Gets whether a constraint type id maps to a contact constraint.
+        /// </summary>
+        /// <param name="constraintTypeId">Id of the constraint to check.</param>
+        /// <returns>True if the type id refers to a contact constraint. False otherwise.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsContactConstraintType(int constraintTypeId)
         {
+            return constraintTypeId < PairCache.CollisionConstraintTypeCount;
+        }
+
+        public void Prepare(float dt, IThreadDispatcher threadDispatcher = null)
+        {
+            timestepDuration = dt;
             OnPrepare(threadDispatcher);
             PairCache.Prepare(threadDispatcher);
             ConstraintRemover.Prepare(threadDispatcher);
@@ -134,9 +149,8 @@ namespace BepuPhysics.CollisionDetection
         protected abstract void OnPostflush(IThreadDispatcher threadDispatcher);
 
 
-        bool deterministic;
         int flushJobIndex;
-        QuickList<NarrowPhaseFlushJob, Buffer<NarrowPhaseFlushJob>> flushJobs;
+        QuickList<NarrowPhaseFlushJob> flushJobs;
         IThreadDispatcher threadDispatcher;
         Action<int> flushWorkerLoop;
         void FlushWorkerLoop(int workerIndex)
@@ -156,10 +170,13 @@ namespace BepuPhysics.CollisionDetection
                     ConstraintRemover.RemoveConstraintsFromBodyLists();
                     break;
                 case NarrowPhaseFlushJobType.ReturnConstraintHandles:
-                    ConstraintRemover.ReturnConstraintHandles(deterministic, threadPool);
+                    ConstraintRemover.ReturnConstraintHandles(threadPool);
                     break;
                 case NarrowPhaseFlushJobType.RemoveConstraintFromBatchReferencedHandles:
                     ConstraintRemover.RemoveConstraintsFromBatchReferencedHandles();
+                    break;
+                case NarrowPhaseFlushJobType.RemoveConstraintsFromFallbackBatch:
+                    ConstraintRemover.RemoveConstraintsFromFallbackBatch();
                     break;
                 case NarrowPhaseFlushJobType.RemoveConstraintFromTypeBatch:
                     ConstraintRemover.RemoveConstraintsFromTypeBatch(job.Index);
@@ -171,24 +188,26 @@ namespace BepuPhysics.CollisionDetection
 
         }
 
-        public void Flush(IThreadDispatcher threadDispatcher = null, bool deterministic = false)
+        public void Flush(IThreadDispatcher threadDispatcher = null)
         {
+            var deterministic = threadDispatcher != null && Simulation.Deterministic;
             OnPreflush(threadDispatcher, deterministic);
             //var start = Stopwatch.GetTimestamp();
-            var jobPool = Pool.SpecializeFor<NarrowPhaseFlushJob>();
-            QuickList<NarrowPhaseFlushJob, Buffer<NarrowPhaseFlushJob>>.Create(jobPool, 128, out flushJobs);
+            flushJobs = new QuickList<NarrowPhaseFlushJob>(128, Pool);
             PairCache.PrepareFlushJobs(ref flushJobs);
-            //We indirectly pass the determinism state; it's used by the constraint remover bookkeeping.
-            this.deterministic = deterministic;
-            var removalBatchJobCount = ConstraintRemover.CreateFlushJobs();
+            var removalBatchJobCount = ConstraintRemover.CreateFlushJobs(deterministic);
             //Note that we explicitly add the constraint remover jobs here. 
             //The constraint remover can be used in two ways- sleeper style, and narrow phase style.
             //In sleeping, we're not actually removing constraints from the simulation completely, so it requires fewer jobs.
             //The constraint remover just lets you choose which jobs to call. The narrow phase needs all of them.
-            flushJobs.EnsureCapacity(flushJobs.Count + removalBatchJobCount + 3, jobPool);
+            flushJobs.EnsureCapacity(flushJobs.Count + removalBatchJobCount + 4, Pool);
             flushJobs.AddUnsafely(new NarrowPhaseFlushJob { Type = NarrowPhaseFlushJobType.RemoveConstraintsFromBodyLists });
             flushJobs.AddUnsafely(new NarrowPhaseFlushJob { Type = NarrowPhaseFlushJobType.ReturnConstraintHandles });
             flushJobs.AddUnsafely(new NarrowPhaseFlushJob { Type = NarrowPhaseFlushJobType.RemoveConstraintFromBatchReferencedHandles });
+            if (Solver.ActiveSet.Batches.Count > Solver.FallbackBatchThreshold)
+            {
+                flushJobs.AddUnsafely(new NarrowPhaseFlushJob { Type = NarrowPhaseFlushJobType.RemoveConstraintsFromFallbackBatch });
+            }
             for (int i = 0; i < removalBatchJobCount; ++i)
             {
                 flushJobs.AddUnsafely(new NarrowPhaseFlushJob { Type = NarrowPhaseFlushJobType.RemoveConstraintFromTypeBatch, Index = i });
@@ -210,7 +229,7 @@ namespace BepuPhysics.CollisionDetection
             }
             //var end = Stopwatch.GetTimestamp();
             //Console.WriteLine($"Flush stage 3 time (us): {1e6 * (end - start) / Stopwatch.Frequency}");
-            flushJobs.Dispose(Pool.SpecializeFor<NarrowPhaseFlushJob>());
+            flushJobs.Dispose(Pool);
 
             PairCache.Postflush();
             ConstraintRemover.Postflush();
@@ -247,21 +266,20 @@ namespace BepuPhysics.CollisionDetection
         {
             public CollisionBatcher<CollisionCallbacks> Batcher;
             public PendingConstraintAddCache PendingConstraints;
-            public QuickList<int, Buffer<int>> PendingSetAwakenings;
+            public QuickList<int> PendingSetAwakenings;
 
             public OverlapWorker(int workerIndex, BufferPool pool, NarrowPhase<TCallbacks> narrowPhase)
             {
-                //Note that we give ownership of the 
-                Batcher = new CollisionBatcher<CollisionCallbacks>(pool, narrowPhase.Shapes, narrowPhase.CollisionTaskRegistry,
+                Batcher = new CollisionBatcher<CollisionCallbacks>(pool, narrowPhase.Shapes, narrowPhase.CollisionTaskRegistry, narrowPhase.timestepDuration,
                     new CollisionCallbacks(workerIndex, pool, narrowPhase));
                 PendingConstraints = new PendingConstraintAddCache(pool);
-                QuickList<int, Buffer<int>>.Create(pool.SpecializeFor<int>(), 16, out PendingSetAwakenings);
+                PendingSetAwakenings = new QuickList<int>(16, pool);
             }
         }
 
         internal OverlapWorker[] overlapWorkers;
 
-        public NarrowPhase(Simulation simulation, CollisionTaskRegistry collisionTaskRegistry, TCallbacks callbacks,
+        public NarrowPhase(Simulation simulation, CollisionTaskRegistry collisionTaskRegistry, SweepTaskRegistry sweepTaskRegistry, TCallbacks callbacks,
              int initialSetCapacity, int minimumMappingSize = 2048, int minimumPendingSize = 128, int minimumPerTypeCapacity = 128)
             : base()
         {
@@ -275,6 +293,7 @@ namespace BepuPhysics.CollisionDetection
             Callbacks = callbacks;
             Callbacks.Initialize(simulation);
             CollisionTaskRegistry = collisionTaskRegistry;
+            SweepTaskRegistry = sweepTaskRegistry;
             PairCache = new PairCache(simulation.BufferPool, initialSetCapacity, minimumMappingSize, minimumPendingSize, minimumPerTypeCapacity);
             FreshnessChecker = new FreshnessChecker(this);
             preflushWorkerLoop = PreflushWorkerLoop;
@@ -339,7 +358,7 @@ namespace BepuPhysics.CollisionDetection
                 Debug.Assert(bodyLocationA.SetIndex == 0 || bodyLocationB.SetIndex == 0, "One of the two bodies must be active. Otherwise, something is busted!");
                 ref var setA = ref Bodies.Sets[bodyLocationA.SetIndex];
                 ref var setB = ref Bodies.Sets[bodyLocationB.SetIndex];
-                AddBatchEntries(ref overlapWorker, ref pair,
+                AddBatchEntries(workerIndex, ref overlapWorker, ref pair,
                     ref setA.Collidables[bodyLocationA.Index], ref setB.Collidables[bodyLocationB.Index],
                     ref setA.Poses[bodyLocationA.Index], ref setB.Poses[bodyLocationB.Index],
                     ref setA.Velocities[bodyLocationA.Index], ref setB.Velocities[bodyLocationB.Index]);
@@ -357,7 +376,7 @@ namespace BepuPhysics.CollisionDetection
                 //TODO: Ideally, the compiler would see this and optimize away the relevant math in AddBatchEntries. That's a longshot, though. May want to abuse some generics to force it.
                 var zeroVelocity = default(BodyVelocity);
                 ref var bodySet = ref Bodies.ActiveSet;
-                AddBatchEntries(ref overlapWorker, ref pair,
+                AddBatchEntries(workerIndex, ref overlapWorker, ref pair,
                     ref bodySet.Collidables[bodyLocation.Index], ref Statics.Collidables[staticIndex],
                     ref bodySet.Poses[bodyLocation.Index], ref Statics.Poses[staticIndex],
                     ref bodySet.Velocities[bodyLocation.Index], ref zeroVelocity);
@@ -365,49 +384,124 @@ namespace BepuPhysics.CollisionDetection
 
         }
 
+        unsafe struct CCDSweepFilter : ISweepFilter
+        {
+            public NarrowPhase<TCallbacks> NarrowPhase;
+            public CollidablePair Pair;
+            public int WorkerIndex;
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool AllowTest(int childA, int childB)
+            {
+                return NarrowPhase.Callbacks.AllowContactGeneration(WorkerIndex, Pair, childA, childB);
+            }
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe void AddBatchEntries(ref OverlapWorker overlapWorker,
+        private unsafe void AddBatchEntries(int workerIndex, ref OverlapWorker overlapWorker,
             ref CollidablePair pair, ref Collidable aCollidable, ref Collidable bCollidable,
             ref RigidPose poseA, ref RigidPose poseB, ref BodyVelocity velocityA, ref BodyVelocity velocityB)
         {
             Debug.Assert(pair.A.Packed != pair.B.Packed);
-            //Note that we never create 'unilateral' CCD pairs. That is, if either collidable in a pair enables a CCD feature, we just act like both are using it.
-            //That keeps things a little simpler. Unlike v1, we don't have to worry about the implications of 'motion clamping' here- no need for deeper configuration.
-            var useSubstepping = aCollidable.Continuity.UseSubstepping || bCollidable.Continuity.UseSubstepping;
-            var useInnerSphere = aCollidable.Continuity.UseInnerSphere || bCollidable.Continuity.UseInnerSphere;
             //Note that the pair's margin is the larger of the two involved collidables. This is based on two observations:
             //1) Values smaller than either contributor should never be used, because it may interfere with tuning. Difficult to choose substepping properties without a 
             //known minimum value for speculative margins.
             //2) The larger the margin, the higher the risk of ghost collisions. 
             //Taken together, max is implied.
             var speculativeMargin = Math.Max(aCollidable.SpeculativeMargin, bCollidable.SpeculativeMargin);
+            var allowExpansion = aCollidable.Continuity.AllowExpansionBeyondSpeculativeMargin | bCollidable.Continuity.AllowExpansionBeyondSpeculativeMargin;
+            //Note that we pick float.MaxValue for the maximum bounds expansion passive-involving pairs.
+            //This is a compromise- looser bounds are not a correctness issue, so we're trading off potentially more subpairs
+            //and the need to compute a tighter maximum bound. That's not incredibly expensive, but it does add up. For now, we use the looser bound under the assumption
+            //that the vast majority of pairs won't benefit from the tighter bound.
+            var maximumExpansion = allowExpansion ? float.MaxValue : speculativeMargin;
+
             //Create a continuation for the pair given the CCD state.
-            if (useSubstepping && useInnerSphere)
+            //Note that we never create 'unilateral' CCD pairs. That is, if either collidable in a pair enables a CCD feature, we just act like both are using it.
+            //That keeps things a little simpler. Unlike v1, we don't have to worry about the implications of 'motion clamping' here- no need for deeper configuration.            
+            CCDContinuationIndex continuationIndex = default;
+            if (aCollidable.Continuity.Mode == ContinuousDetectionMode.Continuous || bCollidable.Continuity.Mode == ContinuousDetectionMode.Continuous)
             {
-            }
-            else if (useSubstepping)
-            {
+                var sweepTask = SweepTaskRegistry.GetTask(aCollidable.Shape.Type, bCollidable.Shape.Type);
+                if (sweepTask != null)
+                {
+                    //Not every continuous pair requires an actual sweep test. If the maximum approaching displacement for any point on the involved shapes isn't any larger
+                    //than the speculative margin, then we don't need to perform a sweep- we can assume that the speculative margin will take care of it.
+                    //sweepRequired = (||angularVelocityA|| * maximumRadiusA + ||angularVelocityB|| * maximumRadiusB + ||relativeLinearVelocity||) * dt > speculativeMargin
+                    //Unfortunately, there's no easy and quick way to grab a reliable maximum radius for all shape types. Convexes have a relatively cheap value (though it may
+                    //involve a square root sometimes), but compounds tend to require heavier lifting and iteration.
+                    //Given that this should be a pretty rarely used loose optimization, we'll instead make use of the bounding boxes to create an estimate.
+                    //Note that the broad phase already touched this data on this thread, so it's still available in L1. (This function is called from broad phase collision testing.)
+                    //TODO: May want to reconsider this approach if you end up caching more properties on the shape (or if profiling suggests it is a concern).
+                    var aInStaticTree = pair.A.Mobility == CollidableMobility.Static || Simulation.Bodies.HandleToLocation[pair.A.Handle].SetIndex > 0;
+                    var bInStaticTree = pair.B.Mobility == CollidableMobility.Static || Simulation.Bodies.HandleToLocation[pair.B.Handle].SetIndex > 0;
+                    ref var aTree = ref aInStaticTree ? ref Simulation.BroadPhase.StaticTree : ref Simulation.BroadPhase.ActiveTree;
+                    ref var bTree = ref bInStaticTree ? ref Simulation.BroadPhase.StaticTree : ref Simulation.BroadPhase.ActiveTree;
+                    BroadPhase.GetBoundsPointers(aCollidable.BroadPhaseIndex, ref aTree, out var aMin, out var aMax);
+                    BroadPhase.GetBoundsPointers(bCollidable.BroadPhaseIndex, ref bTree, out var bMin, out var bMax);
+                    var maximumRadiusA = (*aMax - *aMin).Length() * 0.5f;
+                    var maximumRadiusB = (*bMax - *bMin).Length() * 0.5f;
+                    if ((velocityA.Angular.Length() * maximumRadiusA + velocityB.Angular.Length() * maximumRadiusB + (velocityB.Linear - velocityA.Linear).Length()) * timestepDuration > speculativeMargin)
+                    {
+                        Simulation.Shapes[aCollidable.Shape.Type].GetShapeData(aCollidable.Shape.Index, out var shapeDataA, out var shapeSizeA);
+                        Simulation.Shapes[bCollidable.Shape.Type].GetShapeData(bCollidable.Shape.Index, out var shapeDataB, out var shapeSizeB);
+                        float minimumSweepTimestepA, sweepConvergenceThresholdA;
+                        if(aCollidable.Continuity.Mode == ContinuousDetectionMode.Continuous)
+                        {
+                            minimumSweepTimestepA = aCollidable.Continuity.MinimumSweepTimestep;
+                            sweepConvergenceThresholdA = aCollidable.Continuity.SweepConvergenceThreshold;
+                        }
+                        else
+                        {
+                            minimumSweepTimestepA = float.MaxValue;
+                            sweepConvergenceThresholdA = float.MaxValue;
+                        }
+                        float minimumSweepTimestepB, sweepConvergenceThresholdB;
+                        if (bCollidable.Continuity.Mode == ContinuousDetectionMode.Continuous)
+                        {
+                            minimumSweepTimestepB = bCollidable.Continuity.MinimumSweepTimestep;
+                            sweepConvergenceThresholdB = bCollidable.Continuity.SweepConvergenceThreshold;
+                        }
+                        else
+                        {
+                            minimumSweepTimestepB = float.MaxValue;
+                            sweepConvergenceThresholdB = float.MaxValue;
+                        }
+                        var filter = new CCDSweepFilter { NarrowPhase = this, Pair = pair, WorkerIndex = workerIndex };
+                        if (sweepTask.Sweep(
+                            shapeDataA, aCollidable.Shape.Type, poseA.Orientation, velocityA,
+                            shapeDataB, bCollidable.Shape.Type, poseB.Position - poseA.Position, poseB.Orientation, velocityB,
+                            timestepDuration,
+                            //Note that we use the *smaller* thresholds. This allows high fidelity objects to demand more time even if paired with low fidelity objects.
+                            Math.Min(minimumSweepTimestepA, minimumSweepTimestepB),
+                            Math.Min(sweepConvergenceThresholdA, sweepConvergenceThresholdB), 25, //Note the fixed but high iteration threshold.
+                            ref filter, Simulation.Shapes, SweepTaskRegistry, overlapWorker.Batcher.Pool, out _, out var t1, out _, out _))
+                        {
+                            //Create the pair at a position known to be intersecting from the sweep test. t0 and t1 are the bounding region of the first time of impact,
+                            //so we pick the later one (t1). The continuation handler will 'rewind' the depths to create speculative contacts.
+                            continuationIndex = overlapWorker.Batcher.Callbacks.AddContinuous(ref pair, velocityB.Linear - velocityA.Linear, velocityA.Angular, velocityB.Angular, t1);
 
+                            //The poses should be as they will be at t1, not where they are now. Velocity is treated as constant throughout the the timestep.
+                            PoseIntegration.Integrate(poseA.Orientation, velocityA.Angular, t1, out var integratedOrientationA);
+                            PoseIntegration.Integrate(poseB.Orientation, velocityB.Angular, t1, out var integratedOrientationB);
+                            var offsetB = poseB.Position - poseA.Position + (velocityB.Linear - velocityA.Linear) * t1;
+                            overlapWorker.Batcher.Add(
+                               aCollidable.Shape, bCollidable.Shape,
+                               offsetB, integratedOrientationA, integratedOrientationB, velocityA, velocityB,
+                               speculativeMargin, maximumExpansion, new PairContinuation((int)continuationIndex.Packed));
+                        }
+                    }
+                }
             }
-            else if (useInnerSphere)
+            if (!continuationIndex.Exists)
             {
-
+                //No CCD continuation was created, so create a discrete one.
+                continuationIndex = overlapWorker.Batcher.Callbacks.AddDiscrete(ref pair);
+                overlapWorker.Batcher.Add(
+                   aCollidable.Shape, bCollidable.Shape,
+                   poseB.Position - poseA.Position, poseA.Orientation, poseB.Orientation, velocityA, velocityB,
+                   speculativeMargin, maximumExpansion, new PairContinuation((int)continuationIndex.Packed));
             }
-            else
-            {
-                //This pair uses no CCD beyond its speculative margin.
-                var continuation = overlapWorker.Batcher.Callbacks.AddDiscrete(ref pair);
-                overlapWorker.Batcher.Add(aCollidable.Shape, bCollidable.Shape, ref poseA, ref poseB, speculativeMargin, (int)continuation.Packed);
-            }
-            ////Pull the velocity information for all involved bodies. We will request a number of steps that will cover the motion path.
-            ////number of substeps = min(maximum substep count, 1 + floor(estimated displacement / step length)), where
-            ////estimated displacement = dt * (length(linear velocity A - linear velocity B) +
-            ////                               maximum radius A * (length(angular velocity A) + maximum radius B * length(angular velocity B)) 
-            ////Once we have a number of 
-            ////We use the minimum step length of each contributing collidable. Treat non-substepping collidables as having a step length of infinity.
-            //var stepLengthA = aCollidable.Continuity.UseSubstepping ? aCollidable.Continuity.MaximumStepLength : float.MaxValue;
-            //var stepLengthB = bCollidable.Continuity.UseSubstepping ? bCollidable.Continuity.MaximumStepLength : float.MaxValue;
-            //float stepLength = stepLengthA < stepLengthB ? stepLengthA : stepLengthB;
         }
     }
 }

@@ -25,7 +25,7 @@ namespace Demos.SpecializedTests
             for (int i = simulation.Bodies.ActiveSet.Count - 1; i >= 1; --i)
             {
                 //This helper function handles the updates that have to be performed across all body-sensitive systems.
-                BodyLayoutOptimizer.SwapBodyLocation(simulation.Bodies, i, random.Next(i));
+                BodyLayoutOptimizer.SwapBodyLocation(simulation.Bodies, simulation.Solver, i, random.Next(i));
             }
 
         }
@@ -191,7 +191,7 @@ namespace Demos.SpecializedTests
             var toAddIndex = random.Next(removedBodies.Count);
             var toAdd = removedBodies[toAddIndex];
             FastRemoveAt(removedBodies, toAddIndex);
-            var bodyHandle = simulation.Bodies.Add(ref bodyDescriptions[toAdd]);
+            var bodyHandle = simulation.Bodies.Add(bodyDescriptions[toAdd]);
             bodyHandlesToIdentity[bodyHandle] = toAdd;
             bodyHandles[toAdd] = bodyHandle;
             WriteLine($"Added body, handle: {bodyHandle}");

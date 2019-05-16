@@ -5,7 +5,7 @@ using System.Numerics;
 
 namespace BepuPhysics.Trees
 {
-    partial class Tree
+    partial struct Tree
     {
         //TODO: Recursive approach is a bit silly. Our earlier nonrecursive implementations weren't great, but we could do better.
         //This is especially true if we end up changing the memory layout. If we go back to a contiguous array per level, refit becomes trivial.
@@ -24,7 +24,7 @@ namespace BepuPhysics.Trees
             {
                 Refit(b.Index, out b.Min, out b.Max);
             }
-            BoundingBox.CreateMerged(ref a.Min, ref a.Max, ref b.Min, ref b.Max, out min, out max);
+            BoundingBox.CreateMerged(a.Min, a.Max, b.Min, b.Max, out min, out max);
         }
         
         public unsafe void Refit()

@@ -1,12 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Text;
 using BepuUtilities.Memory;
-using System.Diagnostics;
 using Quaternion = BepuUtilities.Quaternion;
 using BepuUtilities;
+using BepuPhysics.CollisionDetection;
 
 namespace BepuPhysics.Collidables
 {
@@ -40,7 +38,7 @@ namespace BepuPhysics.Collidables
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void GetBounds(ref Quaternion orientation, out Vector3 min, out Vector3 max)
+        public void ComputeBounds(in Quaternion orientation, out Vector3 min, out Vector3 max)
         {
             Matrix3x3.CreateFromQuaternion(orientation, out var basis);
             var x = HalfWidth * basis.X;
@@ -50,12 +48,19 @@ namespace BepuPhysics.Collidables
             min = -max;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ComputeAngularExpansionData(out float maximumRadius, out float maximumAngularExpansion)
+        {
+            maximumRadius = (float)Math.Sqrt(HalfWidth * HalfWidth + HalfHeight * HalfHeight + HalfLength * HalfLength);
+            maximumAngularExpansion = maximumRadius - Vector4.Min(new Vector4(HalfLength), Vector4.Min(new Vector4(HalfHeight), new Vector4(HalfLength))).X;
+        }
+
         public bool RayTest(in RigidPose pose, in Vector3 origin, in Vector3 direction, out float t, out Vector3 normal)
         {
             var offset = origin - pose.Position;
             Matrix3x3.CreateFromQuaternion(pose.Orientation, out var orientation);
-            Matrix3x3.TransformTranspose(offset, ref orientation, out var localOffset);
-            Matrix3x3.TransformTranspose(direction, ref orientation, out var localDirection);
+            Matrix3x3.TransformTranspose(offset, orientation, out var localOffset);
+            Matrix3x3.TransformTranspose(direction, orientation, out var localDirection);
             //Note that this division has two odd properties:
             //1) If the local direction has a near zero component, it is clamped to a nonzero but extremely small value. This is a hack, but it works reasonably well.
             //The idea is that any interval computed using such an inverse would be enormous. Those values will not be exactly accurate, but they will never appear as a result
@@ -120,7 +125,7 @@ namespace BepuPhysics.Collidables
             }
             t = latestEntry < 0 ? 0 : latestEntry;
             //The normal should point away from the center of the box.
-            if (Vector3.Dot(normal, localOffset) < 0)
+            if (Vector3.Dot(normal, offset) < 0)
             {
                 normal = -normal;
             }
@@ -161,7 +166,7 @@ namespace BepuPhysics.Collidables
         public Vector<float> HalfLength;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Broadcast(ref Box shape)
+        public void Broadcast(in Box shape)
         {
             HalfWidth = new Vector<float>(shape.HalfWidth);
             HalfHeight = new Vector<float>(shape.HalfHeight);
@@ -169,33 +174,52 @@ namespace BepuPhysics.Collidables
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Gather(ref Box source)
+        public void WriteFirst(in Box source)
         {
             Unsafe.As<Vector<float>, float>(ref HalfWidth) = source.HalfWidth;
             Unsafe.As<Vector<float>, float>(ref HalfHeight) = source.HalfHeight;
             Unsafe.As<Vector<float>, float>(ref HalfLength) = source.HalfLength;
         }
 
+        public bool AllowOffsetMemoryAccess => true;
+        public int InternalAllocationSize => 0;
+        public void Initialize(in RawBuffer memory) { }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void GetBounds(ref QuaternionWide orientations, out Vector<float> maximumRadius, out Vector<float> maximumAngularExpansion, out Vector3Wide min, out Vector3Wide max)
+        public void WriteSlot(int index, in Box source)
         {
-            Matrix3x3Wide.CreateFromQuaternion(ref orientations, out var basis);
+            GatherScatter.GetOffsetInstance(ref this, index).WriteFirst(source);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void GetBounds(ref QuaternionWide orientations, int countInBundle, out Vector<float> maximumRadius, out Vector<float> maximumAngularExpansion, out Vector3Wide min, out Vector3Wide max)
+        {
+            Matrix3x3Wide.CreateFromQuaternion(orientations, out var basis);
             max.X = Vector.Abs(HalfWidth * basis.X.X) + Vector.Abs(HalfHeight * basis.Y.X) + Vector.Abs(HalfLength * basis.Z.X);
             max.Y = Vector.Abs(HalfWidth * basis.X.Y) + Vector.Abs(HalfHeight * basis.Y.Y) + Vector.Abs(HalfLength * basis.Z.Y);
             max.Z = Vector.Abs(HalfWidth * basis.X.Z) + Vector.Abs(HalfHeight * basis.Y.Z) + Vector.Abs(HalfLength * basis.Z.Z);
 
-            Vector3Wide.Negate(ref max, out min);
+            Vector3Wide.Negate(max, out min);
 
             maximumRadius = Vector.SquareRoot(HalfWidth * HalfWidth + HalfHeight * HalfHeight + HalfLength * HalfLength);
             maximumAngularExpansion = maximumRadius - Vector.Min(HalfLength, Vector.Min(HalfHeight, HalfLength));
         }
 
+        public int MinimumWideRayCount
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                return 3;
+            }
+        }
+
         public void RayTest(ref RigidPoses pose, ref RayWide ray, out Vector<int> intersected, out Vector<float> t, out Vector3Wide normal)
         {
-            Vector3Wide.Subtract(ref ray.Origin, ref pose.Position, out var offset);
-            Matrix3x3Wide.CreateFromQuaternion(ref pose.Orientation, out var orientation);
-            Matrix3x3Wide.TransformByTransposedWithoutOverlap(ref offset, ref orientation, out var localOffset);
-            Matrix3x3Wide.TransformByTransposedWithoutOverlap(ref ray.Direction, ref orientation, out var localDirection);
+            Vector3Wide.Subtract(ray.Origin, pose.Position, out var offset);
+            Matrix3x3Wide.CreateFromQuaternion(pose.Orientation, out var orientation);
+            Matrix3x3Wide.TransformByTransposedWithoutOverlap(offset, orientation, out var localOffset);
+            Matrix3x3Wide.TransformByTransposedWithoutOverlap(ray.Direction, orientation, out var localDirection);
             //Note that this division has two odd properties:
             //1) If the local direction has a near zero component, it is clamped to a nonzero but extremely small value. This is a hack, but it works reasonably well.
             //The idea is that any interval computed using such an inverse would be enormous. Those values will not be exactly accurate, but they will never appear as a result
@@ -235,11 +259,42 @@ namespace BepuPhysics.Collidables
             normal.X = Vector.ConditionalSelect(useX, orientation.X.X, Vector.ConditionalSelect(useY, orientation.Y.X, orientation.Z.X));
             normal.Y = Vector.ConditionalSelect(useX, orientation.X.Y, Vector.ConditionalSelect(useY, orientation.Y.Y, orientation.Z.Y));
             normal.Z = Vector.ConditionalSelect(useX, orientation.X.Z, Vector.ConditionalSelect(useY, orientation.Y.Z, orientation.Z.Z));
-            Vector3Wide.Dot(ref normal, ref localOffset, out var dot);
+            Vector3Wide.Dot(normal, offset, out var dot);
             var shouldNegate = Vector.LessThan(dot, Vector<float>.Zero);
             normal.X = Vector.ConditionalSelect(shouldNegate, -normal.X, normal.X);
             normal.Y = Vector.ConditionalSelect(shouldNegate, -normal.Y, normal.Y);
             normal.Z = Vector.ConditionalSelect(shouldNegate, -normal.Z, normal.Z);
+        }
+    }
+
+    public struct BoxSupportFinder : ISupportFinder<Box, BoxWide>
+    {
+        public bool HasMargin
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return false; }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void GetMargin(in BoxWide shape, out Vector<float> margin)
+        {
+            margin = default;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ComputeSupport(in BoxWide shape, in Matrix3x3Wide orientation, in Vector3Wide direction, in Vector<int> terminatedLanes, out Vector3Wide support)
+        {
+            Matrix3x3Wide.TransformByTransposedWithoutOverlap(direction, orientation, out var localDirection);
+            ComputeLocalSupport(shape, localDirection, terminatedLanes, out var localSupport);
+            Matrix3x3Wide.TransformWithoutOverlap(localSupport, orientation, out support);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ComputeLocalSupport(in BoxWide shape, in Vector3Wide direction, in Vector<int> terminatedLanes, out Vector3Wide support)
+        {
+            support.X = Vector.ConditionalSelect(Vector.LessThan(direction.X, Vector<float>.Zero), -shape.HalfWidth, shape.HalfWidth);
+            support.Y = Vector.ConditionalSelect(Vector.LessThan(direction.Y, Vector<float>.Zero), -shape.HalfHeight, shape.HalfHeight);
+            support.Z = Vector.ConditionalSelect(Vector.LessThan(direction.Z, Vector<float>.Zero), -shape.HalfLength, shape.HalfLength);
         }
     }
 }

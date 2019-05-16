@@ -24,15 +24,15 @@ namespace DemoRenderer.Constraints
         public uint PackedColor;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LineInstance(ref Vector3 start, ref Vector3 end, ref Vector3 color, ref Vector3 backgroundColor)
+        public LineInstance(in Vector3 start, in Vector3 end, in Vector3 color, in Vector3 backgroundColor)
         {
             Start = start;
-            PackedBackgroundColor = Helpers.PackColor(ref backgroundColor);
+            PackedBackgroundColor = Helpers.PackColor(backgroundColor);
             End = end;
-            PackedColor = Helpers.PackColor(ref color);
+            PackedColor = Helpers.PackColor(color);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public LineInstance(ref Vector3 start, ref Vector3 end, uint packedColor, uint packedBackgroundColor)
+        public LineInstance(in Vector3 start, in Vector3 end, uint packedColor, uint packedBackgroundColor)
         {
             Start = start;
             PackedBackgroundColor = packedBackgroundColor;
@@ -78,7 +78,7 @@ namespace DemoRenderer.Constraints
             pixelShader = new PixelShader(device, cache.GetShader(@"Constraints\RenderLines.hlsl.pshader"));
         }
 
-        public void Render(DeviceContext context, Camera camera, Int2 resolution, LineInstance[] instances, int start, int count)
+        public void Render(DeviceContext context, Camera camera, Int2 resolution, Span<LineInstance> instances, int start, int count)
         {
             var vertexConstantsData = new VertexConstants
             {

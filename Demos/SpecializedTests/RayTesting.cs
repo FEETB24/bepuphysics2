@@ -52,6 +52,7 @@ namespace Demos.SpecializedTests
             return surfaceDistance < shape.Radius * 1e-3f;
         }
     }
+
     public struct CapsuleRayTester : IRayTester<Capsule>
     {
         public void GetRandomShape(Random random, out Capsule shape)
@@ -104,6 +105,101 @@ namespace Demos.SpecializedTests
             if (surfaceDistance < 0)
                 surfaceDistance = -surfaceDistance;
             return surfaceDistance < capsule.Radius * 1e-3f;
+        }
+    }
+
+    public struct CylinderRayTester : IRayTester<Cylinder>
+    {
+        public void GetRandomShape(Random random, out Cylinder shape)
+        {
+            const float sizeMin = 0.1f;
+            const float sizeSpan = 200;
+            shape = new Cylinder(sizeMin + sizeSpan * (float)random.NextDouble(), sizeMin * sizeSpan * (float)random.NextDouble());
+        }
+        public void GetPointInVolume(Random random, float innerMargin, ref Cylinder cylinder, out Vector3 localPointInCylinder)
+        {
+            float distanceSquared;
+            float effectiveRadius = Math.Max(0, cylinder.Radius - innerMargin);
+            float effectiveHalfLength = Math.Max(0, cylinder.HalfLength - innerMargin);
+            float radiusSquared = effectiveRadius * effectiveRadius;
+            var min = new Vector2(effectiveRadius);
+            var span = min * 2;
+            min = -min;
+            Vector2 randomHorizontal;
+            do
+            {
+                randomHorizontal = min + span * new Vector2((float)random.NextDouble(), (float)random.NextDouble());
+                distanceSquared = randomHorizontal.LengthSquared();
+
+            } while (distanceSquared > radiusSquared);
+            localPointInCylinder = new Vector3(randomHorizontal.X, -effectiveHalfLength + 2 * effectiveHalfLength * (float)random.NextDouble(), randomHorizontal.Y);
+        }
+
+        public void GetSurface(Random random, ref Cylinder cylinder, out Vector3 localPointOnCylinder, out Vector3 localNormal)
+        {
+            float distanceSquared;
+            var min = new Vector2(cylinder.Radius);
+            var span = min * 2;
+            min = -min;
+
+            var sideArea = 4 * MathF.PI * cylinder.Radius * cylinder.HalfLength;
+            var capArea = MathF.PI * cylinder.Radius * cylinder.Radius;
+            var totalArea = capArea * 2 + sideArea;
+            var faceSelection = random.NextDouble();
+            if (faceSelection * totalArea < sideArea)
+            {
+                //Side.
+                Vector2 randomHorizontal;
+                do
+                {
+                    randomHorizontal = min + span * new Vector2((float)random.NextDouble(), (float)random.NextDouble());
+                    distanceSquared = randomHorizontal.LengthSquared();
+
+                } while (distanceSquared < 1e-7f);
+                var horizontalNormal = randomHorizontal / (float)Math.Sqrt(distanceSquared);
+                localNormal = new Vector3(horizontalNormal.X, 0, horizontalNormal.Y);
+                var horizontalOffset = horizontalNormal * cylinder.Radius;
+                localPointOnCylinder = new Vector3(horizontalOffset.X, -cylinder.HalfLength + 2 * cylinder.HalfLength * (float)random.NextDouble(), horizontalOffset.Y);
+            }
+            else
+            {
+                //One of the two caps.
+                var upperCap = faceSelection * totalArea < totalArea - capArea;
+                localNormal = new Vector3(0, upperCap ? 1 : -1, 0);
+                Vector2 randomHorizontal;
+                do
+                {
+                    randomHorizontal = min + span * new Vector2((float)random.NextDouble(), (float)random.NextDouble());
+                    distanceSquared = randomHorizontal.LengthSquared();
+
+                } while (distanceSquared < cylinder.Radius * cylinder.Radius);
+                localPointOnCylinder = new Vector3(randomHorizontal.X, upperCap ? cylinder.HalfLength : -cylinder.HalfLength, randomHorizontal.Y);
+            }
+        }
+
+        public bool PointIsOnSurface(ref Cylinder cylinder, ref Vector3 localPoint)
+        {
+            var epsilon = MathF.Max(cylinder.HalfLength, cylinder.Radius) * 1e-3f;
+            if (MathF.Abs(localPoint.Y) > cylinder.HalfLength + epsilon)
+            {
+                //Too far up or down.
+                return false;
+            }
+            var horizontalDistanceSquared = localPoint.X * localPoint.X + localPoint.Z * localPoint.Z;
+            var radiusPlusEpsilon = cylinder.Radius + epsilon;
+            if (horizontalDistanceSquared > radiusPlusEpsilon * radiusPlusEpsilon)
+            {
+                //Too far out.
+                return false;
+            }
+            if (MathF.Abs(localPoint.Y) > cylinder.HalfLength - epsilon)
+            {
+                //It's on one of the caps. Already confirmed that the point isn't outside of the radius.
+                return true;
+            }
+            //It's not on a cap. If it's not too deep, then it's on the surface of the side.
+            var radiusMinusEpsilon = cylinder.Radius - epsilon;
+            return horizontalDistanceSquared > radiusMinusEpsilon * radiusMinusEpsilon;
         }
     }
 
@@ -166,7 +262,6 @@ namespace Demos.SpecializedTests
         }
     }
 
-
     public static class RayTesting
     {
         internal static void GetUnitDirection(Random random, out Vector3 direction)
@@ -210,10 +305,10 @@ namespace Demos.SpecializedTests
             do
             {
                 GetUnitDirection(random, out var randomDirection);
-                Vector3x.Cross(ref normal, ref randomDirection, out basisX);
+                basisX = Vector3.Cross(normal, randomDirection);
                 basisXLengthSquared = basisX.LengthSquared();
             } while (basisXLengthSquared < 1e-7f);
-            Vector3x.Cross(ref normal, ref basisX, out var basisZ);
+            var basisZ = Vector3.Cross(normal, basisX);
             point = anchor + basisX * localPoint.X + basisZ * localPoint.Y;
         }
 
@@ -235,16 +330,16 @@ namespace Demos.SpecializedTests
                 {
                     Console.WriteLine("Wide ray t disagrees with scalar ray.");
                 }
-                if (Math.Abs(normalWide.X[0] - normal.X) > 1e-7f ||
-                    Math.Abs(normalWide.Y[0] - normal.Y) > 1e-7f ||
-                    Math.Abs(normalWide.Z[0] - normal.Z) > 1e-7f)
+                if (Math.Abs(normalWide.X[0] - normal.X) > 1e-6f ||
+                    Math.Abs(normalWide.Y[0] - normal.Y) > 1e-6f ||
+                    Math.Abs(normalWide.Z[0] - normal.Z) > 1e-6f)
                 {
                     Console.WriteLine("Wide ray normal disagrees with scalar ray.");
                 }
             }
         }
 
-        public static void Test<TShape, TShapeWide, TTester>() where TShape : IConvexShape where TTester : IRayTester<TShape> where TShapeWide : IShapeWide<TShape>
+        static void Test<TShape, TShapeWide, TTester>() where TShape : IConvexShape where TTester : IRayTester<TShape> where TShapeWide : IShapeWide<TShape>
         {
             const int shapeIterations = 1000;
             const int transformIterations = 100;
@@ -276,7 +371,7 @@ namespace Demos.SpecializedTests
             for (int shapeIteration = 0; shapeIteration < shapeIterations; ++shapeIteration)
             {
                 tester.GetRandomShape(random, out var shape);
-                shapeWide.Broadcast(ref shape);
+                shapeWide.Broadcast(shape);
                 for (int transformIteration = 0; transformIteration < transformIterations; ++transformIteration)
                 {
                     RigidPose pose;
@@ -292,11 +387,11 @@ namespace Demos.SpecializedTests
                         var localSourcePoint = pointOnSurface + normal * (outsideMinimumDistance + (float)random.NextDouble() * outsideDistanceSpan);
                         tester.GetPointInVolume(random, volumeInnerMargin, ref shape, out var localTargetPoint);
 
-                        Matrix3x3.Transform(ref localSourcePoint, ref orientation, out var sourcePoint);
+                        Matrix3x3.Transform(localSourcePoint, orientation, out var sourcePoint);
                         sourcePoint += pose.Position;
                         var directionScale = (0.01f + 2 * (float)random.NextDouble());
                         var localDirection = (localTargetPoint - localSourcePoint) * directionScale;
-                        Matrix3x3.Transform(ref localDirection, ref orientation, out var direction);
+                        Matrix3x3.Transform(localDirection, orientation, out var direction);
 
                         bool intersected;
                         if (intersected = shape.RayTest(pose, sourcePoint, direction, out var t, out var rayTestedNormal))
@@ -304,7 +399,7 @@ namespace Demos.SpecializedTests
                             //If the ray start is outside the shape and the target point is inside, then the ray impact should exist on the surface of the shape.
                             var hitLocation = sourcePoint + t * direction;
                             var localHitLocation = hitLocation - pose.Position;
-                            Matrix3x3.TransformTranspose(localHitLocation, ref orientation, out localHitLocation);
+                            Matrix3x3.TransformTranspose(localHitLocation, orientation, out localHitLocation);
                             if (!tester.PointIsOnSurface(ref shape, ref localHitLocation))
                             {
                                 Console.WriteLine("Outside->inside ray detected non-surface impact.");
@@ -319,7 +414,7 @@ namespace Demos.SpecializedTests
                     for (int rayIndex = 0; rayIndex < insideRays; ++rayIndex)
                     {
                         tester.GetPointInVolume(random, volumeInnerMargin, ref shape, out var localSourcePoint);
-                        Matrix3x3.Transform(ref localSourcePoint, ref orientation, out var sourcePoint);
+                        Matrix3x3.Transform(localSourcePoint, orientation, out var sourcePoint);
                         sourcePoint += pose.Position;
 
                         var directionScale = (0.01f + 100 * (float)random.NextDouble());
@@ -351,9 +446,9 @@ namespace Demos.SpecializedTests
                         GetPointOnPlane(random, exclusion, span, ref localTargetPoint, ref localNormal, out var localSourcePoint);
                         var directionScale = (0.01f + 2 * (float)random.NextDouble());
                         var localDirection = (localTargetPoint - localSourcePoint) * directionScale;
-                        Matrix3x3.Transform(ref localSourcePoint, ref orientation, out var sourcePoint);
+                        Matrix3x3.Transform(localSourcePoint, orientation, out var sourcePoint);
                         sourcePoint += pose.Position;
-                        Matrix3x3.Transform(ref localDirection, ref orientation, out var direction);
+                        Matrix3x3.Transform(localDirection, orientation, out var direction);
                         bool intersected;
                         if (intersected = shape.RayTest(pose, sourcePoint, direction, out var t, out var rayTestedNormal))
                         {
@@ -372,9 +467,9 @@ namespace Demos.SpecializedTests
                         } while (Vector3.Dot(localTargetPoint - localSourcePoint, localNormal) < 0);
                         var directionScale = (0.01f + 2 * (float)random.NextDouble());
                         var localDirection = (localTargetPoint - localSourcePoint) * directionScale;
-                        Matrix3x3.Transform(ref localSourcePoint, ref orientation, out var sourcePoint);
+                        Matrix3x3.Transform(localSourcePoint, orientation, out var sourcePoint);
                         sourcePoint += pose.Position;
-                        Matrix3x3.Transform(ref localDirection, ref orientation, out var direction);
+                        Matrix3x3.Transform(localDirection, orientation, out var direction);
                         bool intersected;
                         if (intersected = shape.RayTest(pose, sourcePoint, direction, out var t, out var rayTestedNormal))
                         {
@@ -384,6 +479,14 @@ namespace Demos.SpecializedTests
                     }
                 }
             }
+        }
+
+        public static void Test()
+        {
+            Test<Sphere, SphereWide, SphereRayTester>();
+            Test<Capsule, CapsuleWide, CapsuleRayTester>();
+            Test<Cylinder, CylinderWide, CylinderRayTester>();
+            Test<Box, BoxWide, BoxRayTester>();
         }
     }
 }
