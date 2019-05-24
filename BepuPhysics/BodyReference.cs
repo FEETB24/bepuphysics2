@@ -140,6 +140,21 @@ namespace BepuPhysics
         }
 
         /// <summary>
+        /// Gets a reference to the body's activity state.
+        /// </summary>
+        public ref ConveyorSettings ConveyorSettings
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                ref var location = ref Location;
+                return ref Bodies.Sets[location.SetIndex].ConveyorSettings[location.Index];
+            }
+        }
+
+
+
+        /// <summary>
         /// Gets a reference to the list of the body's connected constraints.
         /// </summary>
         public ref QuickList<BodyConstraintReference> Constraints

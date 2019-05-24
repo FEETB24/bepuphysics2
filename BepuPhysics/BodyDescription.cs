@@ -40,6 +40,7 @@ namespace BepuPhysics
         public BodyVelocity Velocity;
         public CollidableDescription Collidable;
         public BodyActivityDescription Activity;
+        public ConveyorSettings ConveyorSettings;
 
         //Convex shape helpers.
         /// <summary>

@@ -39,6 +39,8 @@ namespace BepuPhysics
         public Buffer<BodyVelocity> Velocities;
         public Buffer<BodyInertia> LocalInertias;
 
+
+        public Buffer<ConveyorSettings> ConveyorSettings;
         /// <summary>
         /// The collidables owned by each body in the set. Speculative margins, continuity settings, and shape indices can be changed directly.
         /// Shape indices cannot transition between pointing at a shape and pointing at nothing or vice versa without notifying the broad phase of the collidable addition or removal.
@@ -92,6 +94,7 @@ namespace BepuPhysics
                 Poses[bodyIndex] = Poses[movedBodyIndex];
                 Velocities[bodyIndex] = Velocities[movedBodyIndex];
                 LocalInertias[bodyIndex] = LocalInertias[movedBodyIndex];
+                ConveyorSettings[bodyIndex] = ConveyorSettings[movedBodyIndex];
                 Activity[bodyIndex] = Activity[movedBodyIndex];
                 Collidables[bodyIndex] = Collidables[movedBodyIndex];
                 //Note that the constraint list is NOT disposed before being overwritten.
@@ -116,6 +119,7 @@ namespace BepuPhysics
             BundleIndexing.GetBundleIndices(index, out var bundleIndex, out var innerIndex);
             Poses[index] = description.Pose;
             Velocities[index] = description.Velocity;
+            ConveyorSettings[index] = description.ConveyorSettings;
             LocalInertias[index] = description.LocalInertia;
             ref var collidable = ref Collidables[index];
             collidable.Continuity = description.Collidable.Continuity;
@@ -142,6 +146,7 @@ namespace BepuPhysics
             ref var activity = ref Activity[index];
             description.Activity.SleepThreshold = activity.SleepThreshold;
             description.Activity.MinimumTimestepCountUnderThreshold = activity.MinimumTimestepsUnderThreshold;
+            description.ConveyorSettings = ConveyorSettings[index];
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -214,6 +219,7 @@ namespace BepuPhysics
             Helpers.Swap(ref Poses[slotA], ref Poses[slotB]);
             Helpers.Swap(ref Velocities[slotA], ref Velocities[slotB]);
             Helpers.Swap(ref LocalInertias[slotA], ref LocalInertias[slotB]);
+            Helpers.Swap(ref ConveyorSettings[slotA], ref ConveyorSettings[slotB]);
             Helpers.Swap(ref Activity[slotA], ref Activity[slotB]);
             Helpers.Swap(ref Constraints[slotA], ref Constraints[slotB]);
         }
@@ -230,6 +236,7 @@ namespace BepuPhysics
             pool.ResizeToAtLeast(ref LocalInertias, targetBodyCapacity, Count);
             pool.ResizeToAtLeast(ref IndexToHandle, targetBodyCapacity, Count);
             pool.ResizeToAtLeast(ref Collidables, targetBodyCapacity, Count);
+            pool.ResizeToAtLeast(ref ConveyorSettings, targetBodyCapacity, Count);
             pool.ResizeToAtLeast(ref Activity, targetBodyCapacity, Count);
             pool.ResizeToAtLeast(ref Constraints, targetBodyCapacity, Count);
         }
@@ -254,6 +261,7 @@ namespace BepuPhysics
             pool.Return(ref LocalInertias);
             pool.Return(ref IndexToHandle);
             pool.Return(ref Collidables);
+            pool.Return(ref ConveyorSettings);
             pool.Return(ref Activity);
             pool.Return(ref Constraints);
         }

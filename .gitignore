@@ -205,3 +205,5 @@ ModelManifest.xml
 
 # Don't ignore content files that happen to use the .obj extension.
 !Demos/Content/*.obj
+/BepuPhysics/fs.sdk.key.snk
+/BepuUtilities/fs.sdk.key.snk

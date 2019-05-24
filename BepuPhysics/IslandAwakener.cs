@@ -292,6 +292,7 @@ namespace BepuPhysics
                             targetWorldInertia.InverseMass = sourceLocalInertia.InverseMass;
                         }
                         sourceSet.Velocities.CopyTo(job.SourceStart, ref targetSet.Velocities, job.TargetStart, job.Count);
+                        sourceSet.ConveyorSettings.CopyTo(job.SourceStart, ref targetSet.ConveyorSettings, job.TargetStart, job.Count);
                         sourceSet.Activity.CopyTo(job.SourceStart, ref targetSet.Activity, job.TargetStart, job.Count);
                         if (resetActivityStates)
                         {

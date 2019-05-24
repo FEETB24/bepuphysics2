@@ -356,6 +356,7 @@ namespace BepuPhysics
                         targetSet.Activity[targetIndex] = sourceSet.Activity[sourceIndex];
                         ref var sourceCollidable = ref sourceSet.Collidables[sourceIndex];
                         targetSet.Collidables[targetIndex] = sourceCollidable;
+                        targetSet.ConveyorSettings[targetIndex] = sourceSet.ConveyorSettings[sourceIndex];
                         //Note that we are just copying the constraint list reference; we don't have to reallocate it.
                         //Keep this in mind when removing the object from the active set. We don't want to dispose the list since we're still using it.
                         targetSet.Constraints[targetIndex] = sourceSet.Constraints[sourceIndex];

@@ -299,12 +299,22 @@ namespace BepuPhysics
             ref var baseInertias = ref bodies.Inertias[0];
             ref var baseActivity = ref bodies.ActiveSet.Activity[0];
             ref var baseCollidable = ref bodies.ActiveSet.Collidables[0];
+            ref var baseConveyorSettings = ref bodies.ActiveSet.ConveyorSettings[0];
             for (int i = startIndex; i < endIndex; ++i)
             {
                 ref var pose = ref Unsafe.Add(ref basePoses, i);
                 ref var velocity = ref Unsafe.Add(ref baseVelocities, i);
+                ref var conveyorSettings = ref Unsafe.Add(ref baseConveyorSettings, i);
+
+
+
+                if (conveyorSettings.IsLinearConveyor)
+                {
+                    velocity.Linear = Vector3.Zero;
+                }
 
                 var previousOrientation = pose.Orientation; //This is unused if conservation of angular momentum is disabled... compiler *may* remove it...
+
                 PoseIntegration.Integrate(pose, velocity, dt, out pose);
 
                 //Note that this generally is used before velocity integration. That means an object can go inactive with gravity-induced velocity.
@@ -325,8 +335,15 @@ namespace BepuPhysics
                 //it's virtually always gathered together with the inertia tensor and it really isn't worth a whole extra external system to copy inverse masses only on demand.
                 inertia.InverseMass = localInertia.InverseMass;
 
+                if (conveyorSettings.IsLinearConveyor)
+                {
+                    velocity.Linear += conveyorSettings.LinearVelocity;
+                }
+
+
                 IntegrateAngularVelocity(previousOrientation, pose, localInertia, inertia, ref velocity.Angular, dt);
                 callbacks.IntegrateVelocity(i, pose, localInertia, workerIndex, ref velocity);
+
 
                 //Bounding boxes are accumulated in a scalar fashion, but the actual bounding box calculations are deferred until a sufficient number of collidables are accumulated to make
                 //executing a bundle worthwhile. This does two things: 
@@ -344,6 +361,8 @@ namespace BepuPhysics
                 //associated with loading all the body poses and velocities from memory again. Even if the L3 cache persisted, it would still be worse than looking into L1 or L2.
                 //Also, the pose integrator in isolation is extremely memory bound to the point where it can hardly benefit from multithreading. By interleaving some less memory bound
                 //work into the mix, we can hopefully fill some execution gaps.
+
+
             }
         }
 
@@ -353,6 +372,7 @@ namespace BepuPhysics
             ref var baseVelocities = ref bodies.ActiveSet.Velocities[0];
             ref var baseLocalInertia = ref bodies.ActiveSet.LocalInertias[0];
             ref var baseActivity = ref bodies.ActiveSet.Activity[0];
+            ref var baseConveyorSettings = ref bodies.ActiveSet.ConveyorSettings[0];
             ref var baseCollidable = ref bodies.ActiveSet.Collidables[0];
             for (int i = startIndex; i < endIndex; ++i)
             {
@@ -378,6 +398,7 @@ namespace BepuPhysics
             ref var baseInertias = ref bodies.Inertias[0];
             ref var baseActivity = ref bodies.ActiveSet.Activity[0];
             ref var baseCollidable = ref bodies.ActiveSet.Collidables[0];
+            ref var baseConveyorSettings = ref bodies.ActiveSet.ConveyorSettings[0];
             for (int i = startIndex; i < endIndex; ++i)
             {
                 ref var pose = ref Unsafe.Add(ref basePoses, i);

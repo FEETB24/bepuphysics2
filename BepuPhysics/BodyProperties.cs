@@ -11,6 +11,7 @@ namespace BepuPhysics
 {
     public struct RigidPose
     {
+
         public Vector3 Position;
         //Note that we store a quaternion rather than a matrix3x3. While this often requires some overhead when performing vector transforms or extracting basis vectors, 
         //systems needing to interact directly with this representation are often terrifically memory bound. Spending the extra ALU time to convert to a basis can actually be faster
@@ -147,5 +148,14 @@ namespace BepuPhysics
         /// True if this body is a candidate for being slept. If all the bodies that it is connected to by constraints are also candidates, this body may go to sleep.
         /// </summary>
         public bool SleepCandidate;
+    }
+
+    public struct ConveyorSettings
+    {
+        public bool IsLinearConveyor;
+        public Vector3 LinearVelocity;
+
+        public bool IsAngularConveyor;
+        public Vector3 AngularVelocity;
     }
 }
