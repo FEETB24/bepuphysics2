@@ -307,10 +307,9 @@ namespace BepuPhysics
                 ref var conveyorSettings = ref Unsafe.Add(ref baseConveyorSettings, i);
 
 
-
                 if (conveyorSettings.IsLinearConveyor)
                 {
-                    velocity.Linear = Vector3.Zero;
+                    velocity.Linear = conveyorSettings.LinearVelocity;
                 }
 
                 var previousOrientation = pose.Orientation; //This is unused if conservation of angular momentum is disabled... compiler *may* remove it...
@@ -337,7 +336,7 @@ namespace BepuPhysics
 
                 if (conveyorSettings.IsLinearConveyor)
                 {
-                    velocity.Linear += conveyorSettings.LinearVelocity;
+                    velocity.Linear = conveyorSettings.LinearVelocity + conveyorSettings.ConveyorVelocity;
                 }
 
 

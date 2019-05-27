@@ -153,9 +153,11 @@ namespace BepuPhysics
     public struct ConveyorSettings
     {
         public bool IsLinearConveyor;
+        public Vector3 ConveyorVelocity;
         public Vector3 LinearVelocity;
 
         public bool IsAngularConveyor;
         public Vector3 AngularVelocity;
+        public Vector3 ConveyorAngularVelocity;
     }
 }

@@ -13,7 +13,6 @@ namespace Demos.Demos
     public class DropCircleTest : Demo
     {
         private BodyReference _floorReference;
-        private Vector3 ConveyorVelocity = new Vector3(2f, 0, 0);
 
         public override void Initialize(ContentArchive content, Camera camera)
         {
@@ -42,14 +41,15 @@ namespace Demos.Demos
                 Activity = new BodyActivityDescription
                 {
                     MinimumTimestepCountUnderThreshold = 32,
-                    SleepThreshold = .01f
+                    SleepThreshold = 0.1f,
+
                 },
                 Pose = new RigidPose
                 {
                     Position = new Vector3(1, -0.5f, 1),
                     Orientation = Quaternion.Identity,
                 },
-                ConveyorSettings = new ConveyorSettings() { IsLinearConveyor = true, LinearVelocity = ConveyorVelocity}
+                ConveyorSettings = new ConveyorSettings() {}
                 
             };
 
@@ -128,49 +128,44 @@ namespace Demos.Demos
                 CreateCircleCube(25, 10, 9);
             }
 
-            if (input.WasPushed(OpenTK.Input.Key.Number1))
-            {
-                ConveyorVelocity = new Vector3(2,0,0);
-                _floorReference.ConveyorSettings.LinearVelocity = ConveyorVelocity;
-                _floorReference.ConveyorSettings.IsLinearConveyor = true;
+            var conveyorvelocity = Vector3.Zero;
+            var conveyorVelocityChanged = false;
 
-                
-            }
-            if (input.WasPushed(OpenTK.Input.Key.Number2))
+            if (input.WasDown(OpenTK.Input.Key.Number1))
             {
-                ConveyorVelocity = new Vector3(-2, 0, 0);
-                _floorReference.ConveyorSettings.LinearVelocity = ConveyorVelocity;
-                _floorReference.ConveyorSettings.IsLinearConveyor = true;
+                conveyorvelocity += new Vector3(2,0,0);
+                conveyorVelocityChanged = true;
+            }
+            if (input.WasDown(OpenTK.Input.Key.Number2))
+            {
+                conveyorvelocity += new Vector3(-2, 0, 0);
+                conveyorVelocityChanged = true;
+            }
+            if (input.WasDown(OpenTK.Input.Key.Number3))
+            {
+                conveyorvelocity += new Vector3(0, 0, 2);
+                conveyorVelocityChanged = true;
+            }
+            if (input.WasDown(OpenTK.Input.Key.Number4))
+            {
+                conveyorvelocity += new Vector3(0, 0, -2);
+                conveyorVelocityChanged = true;
+            }
 
-            }
-            if (input.WasPushed(OpenTK.Input.Key.Number3))
+            if (conveyorVelocityChanged)
             {
-                ConveyorVelocity = new Vector3(0, 0, 2);
-                _floorReference.ConveyorSettings.LinearVelocity = ConveyorVelocity;
+                _floorReference.ConveyorSettings.ConveyorVelocity = conveyorvelocity;
                 _floorReference.ConveyorSettings.IsLinearConveyor = true;
+                _floorReference.Activity.SleepThreshold = -1f;
+                Simulation.Awakener.AwakenBody(_floorIndex);
+            }
 
-            }
-            if (input.WasPushed(OpenTK.Input.Key.Number4))
-            {
-                ConveyorVelocity = new Vector3(0, 0, -2);
-                _floorReference.ConveyorSettings.LinearVelocity = ConveyorVelocity;
-                _floorReference.ConveyorSettings.IsLinearConveyor = true;
-   
-            }
             if (input.WasPushed(OpenTK.Input.Key.Number5))
             {
-                ConveyorVelocity = new Vector3(0, 0, 0);
-                _floorReference.ConveyorSettings.LinearVelocity = ConveyorVelocity;
                 _floorReference.ConveyorSettings.IsLinearConveyor = false;
-
-
+                _floorReference.Velocity.Linear = Vector3.Zero;
+                _floorReference.Activity.SleepThreshold = 0.1f;
             }
-
-
-
-
-
-            Simulation.Awakener.AwakenBody(_floorIndex);
             base.Update(window, camera, input, dt);
         }
     }
