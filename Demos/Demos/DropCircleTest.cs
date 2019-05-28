@@ -5,6 +5,7 @@ using BepuPhysics.Collidables;
 using BepuUtilities;
 using DemoContentLoader;
 using DemoRenderer;
+using Demos.Port.CollisionGroups;
 using DemoUtilities;
 using Quaternion = BepuUtilities.Quaternion;
 
@@ -12,15 +13,23 @@ namespace Demos.Demos
 {
     public class DropCircleTest : Demo
     {
+        public struct BodyProperty
+        {
+            public CollisionGroup Filter;
+            public float Friction;
+        }
+
+
         private BodyReference _floorReference;
+        private BodyProperty<BodyProperty> BodyProperties;
 
         public override void Initialize(ContentArchive content, Camera camera)
         {
             camera.Position = new Vector3(-30, 8, -60);
             camera.Yaw = MathHelper.Pi * 3f / 4;
             camera.Pitch = 0;
-
-            Simulation = Simulation.Create(BufferPool, new DefaultNarrowPhaseCallbacks(),
+            BodyProperties = new BodyProperty<BodyProperty>(BufferPool);
+            Simulation = Simulation.Create(BufferPool, new CollisionGroupcallbacks(){CollisionGroups = BodyProperties },
                 new DefaultPoseIntegratorCallbacks(true /*new Vector3(0, -10, 0)*/));
             var boxShape = new Box(1, 1, 1);
             boxShape.ComputeInertia(1, out _boxInertia);
@@ -53,10 +62,15 @@ namespace Demos.Demos
                 
             };
 
-
-
             _floorIndex = Simulation.Bodies.Add(staticDescription);
             _floorReference = new BodyReference(_floorIndex, Simulation.Bodies);
+            ref var floorBodyProperties = ref BodyProperties.Allocate(_floorIndex);
+
+            var floorCollisionGroup = new CollisionGroup(0b1);
+            floorBodyProperties = new BodyProperty(){Filter = floorCollisionGroup, Friction = 1f};
+
+
+
         }
 
         private int _floorIndex;
@@ -65,6 +79,7 @@ namespace Demos.Demos
 
         private void CreateCircleCube(int sampleCount, float radius, int floorCount)
         {
+            var cubeCollisionGroup = new CollisionGroup(0b10);
             var wpCnt = sampleCount;
             var increment = MathHelper.Pi * 2 / wpCnt;
 
@@ -75,48 +90,43 @@ namespace Demos.Demos
                 for (float i = 0; i < MathHelper.Pi * 2 - increment / 2; i += increment)
                 {
                     tempPos = new Vector3((float)Math.Sin(i) * radius, j * 2, (float)Math.Cos(i) * radius);
-
-                    var bodyDescription = new BodyDescription
-                    {
-                        //Make the uppermost block kinematic to hold up the rest of the chain.
-                        LocalInertia = _boxInertia,
-                        Pose = new RigidPose
-                        {
-                            Position = tempPos,
-                            Orientation = Quaternion.Identity
-                        },
-                        Activity = new BodyActivityDescription
-                        {
-                            MinimumTimestepCountUnderThreshold = 32,
-                            SleepThreshold = .01f
-                        },
-                        Collidable = new CollidableDescription { Shape = _boxIndex, SpeculativeMargin = .1f },
-                    };
-                    Simulation.Bodies.Add(bodyDescription);
+                    CreateCube(tempPos);
                 }
             }
+        }
 
 
-            //var bodyDescription = new BodyDescription
-            //{
-            //    //Make the uppermost block kinematic to hold up the rest of the chain.
-            //    LocalInertia = _boxInertia,
-            //    Pose = new RigidPose
-            //    {
-            //        Position = new Vector3(0,0,10),
-            //        Orientation = Quaternion.Identity
-            //    },
-            //    Activity = new BodyActivityDescription
-            //    {
-            //        MinimumTimestepCountUnderThreshold = 32,
-            //        SleepThreshold = .01f
-            //    },
-            //    Collidable = new CollidableDescription { Shape = _boxIndex, SpeculativeMargin = .1f },
-            //};
-            //Simulation.Bodies.Add(bodyDescription);
+        private void CreateCube(in Vector3 position)
+        {
+            var bodyDescription = new BodyDescription
+            {
+                //Make the uppermost block kinematic to hold up the rest of the chain.
+                LocalInertia = _boxInertia,
+                Pose = new RigidPose
+                {
+                    Position = position,
+                    Orientation = Quaternion.Identity
+                },
+                Activity = new BodyActivityDescription
+                {
+                    MinimumTimestepCountUnderThreshold = 32,
+                    SleepThreshold = .01f
+                },
+                Collidable = new CollidableDescription { Shape = _boxIndex, SpeculativeMargin = .1f },
+            };
+            var bodyIndex = Simulation.Bodies.Add(bodyDescription);
+            ref var boxBodyProperty = ref BodyProperties.Allocate(bodyIndex);
+            var boxCollisionGroup = new CollisionGroup(0b10);
+            boxBodyProperty = new BodyProperty() { Filter = boxCollisionGroup, Friction = 1f };
 
         }
 
+        protected override void OnDispose()
+        {
+            base.OnDispose();
+            BodyProperties.Dispose();
+            
+        }
 
         public override void Update(Window window, Camera camera, Input input, float dt)
         {

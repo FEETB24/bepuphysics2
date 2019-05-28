@@ -129,6 +129,11 @@ namespace Demos.Demos
                 return true;
             }
 
+            public void Flush()
+            {
+
+            }
+
             /// <summary>
             /// Releases any resources held by the callbacks. Called by the owning narrow phase when it is being disposed.
             /// </summary>

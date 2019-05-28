@@ -59,6 +59,11 @@ namespace Demos.SpecializedTests
             return true;
         }
 
+        public void Flush()
+        {
+
+        }
+
         public void Initialize(Simulation simulation)
         {
         }

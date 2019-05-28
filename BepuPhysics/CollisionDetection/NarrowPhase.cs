@@ -322,6 +322,7 @@ namespace BepuPhysics.CollisionDetection
             {
                 overlapWorkers[i].Batcher.Callbacks.Dispose();
             }
+
         }
 
         protected override void OnDispose()

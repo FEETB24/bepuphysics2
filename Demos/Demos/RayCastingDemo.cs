@@ -64,6 +64,11 @@ namespace Demos
                 return false;
             }
 
+            public void Flush()
+            {
+
+            }
+
             public void Dispose()
             {
             }

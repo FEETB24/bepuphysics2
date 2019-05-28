@@ -63,6 +63,10 @@ namespace Demos.SpecializedTests
                 return false;
             }
 
+            public void Flush()
+            {
+            }
+
             public void Dispose()
             {
             }

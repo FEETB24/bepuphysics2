@@ -58,6 +58,7 @@ namespace Demos
             AddOption<CustomVoxelCollidableDemo>();
             AddOption<RopeStabilityDemo>();
             AddOption<SubsteppingDemo>();
+            AddOption<GyroscopeTestDemo>();
         }
 
         public int Count { get { return options.Count; } }
