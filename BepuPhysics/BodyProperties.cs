@@ -150,14 +150,39 @@ namespace BepuPhysics
         public bool SleepCandidate;
     }
 
+    /// <summary>
+    /// A conveyor settings.
+    /// </summary>
     public struct ConveyorSettings
     {
-        public bool IsLinearConveyor;
+        /// <summary>
+        /// The conveyor velocity.
+        /// </summary>
         public Vector3 ConveyorVelocity;
+
+        /// <summary>
+        /// The linear velocity.
+        /// </summary>
         public Vector3 LinearVelocity;
 
-        public bool IsAngularConveyor;
+        /// <summary>
+        /// The angular velocity.
+        /// </summary>
         public Vector3 AngularVelocity;
+
+        /// <summary>
+        /// The conveyor angular velocity.
+        /// </summary>
         public Vector3 ConveyorAngularVelocity;
+
+        /// <summary>
+        /// True if this object is linear conveyor.
+        /// </summary>
+        public bool IsLinearConveyor;
+
+        /// <summary>
+        /// True if this object is angular conveyor.
+        /// </summary>
+        public bool IsAngularConveyor;
     }
 }

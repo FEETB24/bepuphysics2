@@ -11,6 +11,7 @@ using DemoRenderer;
 using Demos.Port.CollisionGroups;
 using Demos.Port.EventHandler;
 using DemoUtilities;
+using OpenTK.Input;
 using Quaternion = BepuUtilities.Quaternion;
 
 namespace Demos.Demos
@@ -18,18 +19,17 @@ namespace Demos.Demos
     public class DropCircleTest : Demo
     {
         private const int NumberOfFloors = 20;
-        public struct BodyProperty
-        {
-            public CollisionGroup Filter;
-            public float Friction;
-        }
+        private BodyProperty<BodyProperty> _bodyProperties;
+
+
+        private TypedIndex _boxIndex;
+        private BodyInertia _boxInertia;
+        private FeeSimNarrowPhaseCallbacks<CollisionEventHandler> _collisionGroups;
 
 
         private CollisionEvents<CollisionEventHandler> _events;
 
         private List<BodyReference> _floorReferences;
-        private BodyProperty<BodyProperty> _bodyProperties;
-        private FeeSimNarrowPhaseCallbacks<CollisionEventHandler> _collisionGroups;
 
         public override void Initialize(ContentArchive content, Camera camera)
         {
@@ -38,12 +38,18 @@ namespace Demos.Demos
             camera.Pitch = 0;
             _bodyProperties = new BodyProperty<BodyProperty>(BufferPool);
 
-            _events = new CollisionEvents<CollisionEventHandler>(new CollisionEventHandler(), BufferPool, ThreadDispatcher);
+            _events = new CollisionEvents<CollisionEventHandler>(new CollisionEventHandler(), BufferPool,
+                ThreadDispatcher);
             _events.EventHandler.Pairs = new QuickList<CollidablePair>(128, BufferPool);
             _events.EventHandler.Simulation = Simulation;
 
 
-            _collisionGroups = new FeeSimNarrowPhaseCallbacks<CollisionEventHandler>(){Events = _events, CollisionGroups = _bodyProperties};
+            _collisionGroups =
+                new FeeSimNarrowPhaseCallbacks<CollisionEventHandler>
+                {
+                    Events = _events,
+                    CollisionGroups = _bodyProperties
+                };
             Simulation = Simulation.Create(BufferPool, _collisionGroups,
                 new DefaultPoseIntegratorCallbacks(true /*new Vector3(0, -10, 0)*/));
             var boxShape = new Box(1, 1, 1);
@@ -51,9 +57,6 @@ namespace Demos.Demos
             _boxIndex = Simulation.Shapes.Add(boxShape);
 
             CreateFloors();
-
-
-
         }
 
         private void CreateFloors()
@@ -64,8 +67,8 @@ namespace Demos.Demos
             var position = new Vector3(0, -0.5f, -NumberOfFloors * floorShape.HalfLength);
 
             _floorReferences = new List<BodyReference>(NumberOfFloors);
-            var offset = new Vector3(0,0, floorShape.Length);
-            for (int i = 0; i < NumberOfFloors; i++)
+            var offset = new Vector3(0, 0, floorShape.Length);
+            for (var i = 0; i < NumberOfFloors; i++)
             {
                 var floorIndex = CreateFloor(position, floorShapeIndex);
                 position += offset;
@@ -73,10 +76,9 @@ namespace Demos.Demos
                 ref var floorBodyProperties = ref _bodyProperties.Allocate(floorIndex);
 
                 var floorCollisionGroup = new CollisionGroup(0b1);
-                floorBodyProperties = new BodyProperty() { Filter = floorCollisionGroup, Friction = 1f };
+                floorBodyProperties = new BodyProperty {Filter = floorCollisionGroup, Friction = 1f};
                 _floorReferences.Add(floorReference);
             }
-          
         }
 
 
@@ -87,31 +89,25 @@ namespace Demos.Demos
                 LocalInertia = new BodyInertia(),
                 Collidable = new CollidableDescription
                 {
-                    Continuity = new ContinuousDetectionSettings { Mode = ContinuousDetectionMode.Discrete },
+                    Continuity = new ContinuousDetectionSettings {Mode = ContinuousDetectionMode.Discrete},
                     Shape = shapeIndex,
                     SpeculativeMargin = 0.1f
                 },
                 Activity = new BodyActivityDescription
                 {
                     MinimumTimestepCountUnderThreshold = 32,
-                    SleepThreshold = 0.1f,
-
+                    SleepThreshold = 0.1f
                 },
                 Pose = new RigidPose
                 {
                     Position = position,
-                    Orientation = Quaternion.Identity,
+                    Orientation = Quaternion.Identity
                 },
-                ConveyorSettings = new ConveyorSettings() { }
-
+                ConveyorSettings = new ConveyorSettings()
             };
 
             return Simulation.Bodies.Add(floorDescription);
         }
-
-
-        private TypedIndex _boxIndex;
-        private BodyInertia _boxInertia;
 
         private void CreateCircleCube(int sampleCount, float radius, int floorCount)
         {
@@ -122,12 +118,10 @@ namespace Demos.Demos
             var tempPos = Vector3.Zero;
             var offset = new Vector3(0, 0, 5);
             for (var j = 0; j < floorCount; j++)
+            for (float i = 0; i < MathHelper.Pi * 2 - increment / 2; i += increment)
             {
-                for (float i = 0; i < MathHelper.Pi * 2 - increment / 2; i += increment)
-                {
-                    tempPos = new Vector3((float)Math.Sin(i) * radius, j * 2, (float)Math.Cos(i) * radius);
-                    CreateCube(tempPos);
-                }
+                tempPos = new Vector3((float) Math.Sin(i) * radius, j * 2, (float) Math.Cos(i) * radius);
+                CreateCube(tempPos);
             }
         }
 
@@ -148,25 +142,23 @@ namespace Demos.Demos
                     MinimumTimestepCountUnderThreshold = 32,
                     SleepThreshold = .01f
                 },
-                Collidable = new CollidableDescription { Shape = _boxIndex, SpeculativeMargin = .1f },
+                Collidable = new CollidableDescription {Shape = _boxIndex, SpeculativeMargin = .1f}
             };
             var bodyIndex = Simulation.Bodies.Add(bodyDescription);
             ref var boxBodyProperty = ref _bodyProperties.Allocate(bodyIndex);
             var boxCollisionGroup = new CollisionGroup(0b10);
-            boxBodyProperty = new BodyProperty() { Filter = boxCollisionGroup, Friction = 1f };
-
+            boxBodyProperty = new BodyProperty {Filter = boxCollisionGroup, Friction = 1f};
         }
 
 
         public override void Update(Window window, Camera camera, Input input, float dt)
         {
-
-            
             base.Update(window, camera, input, dt);
             _events.Flush();
+
             #region  KeyInput
 
-            if (input.WasPushed(OpenTK.Input.Key.Z))
+            if (input.WasPushed(Key.Z))
             {
                 CreateCircleCube(25, 16, 11);
                 CreateCircleCube(25, 14, 10);
@@ -177,29 +169,31 @@ namespace Demos.Demos
             var conveyorvelocity = Vector3.Zero;
             var conveyorVelocityChanged = false;
 
-            if (input.WasDown(OpenTK.Input.Key.Number1))
+            if (input.WasDown(Key.Number1))
             {
                 conveyorvelocity += new Vector3(2, 0, 0);
                 conveyorVelocityChanged = true;
             }
-            if (input.WasDown(OpenTK.Input.Key.Number2))
+
+            if (input.WasDown(Key.Number2))
             {
                 conveyorvelocity += new Vector3(-2, 0, 0);
                 conveyorVelocityChanged = true;
             }
-            if (input.WasDown(OpenTK.Input.Key.Number3))
+
+            if (input.WasDown(Key.Number3))
             {
                 conveyorvelocity += new Vector3(0, 0, 2);
                 conveyorVelocityChanged = true;
             }
-            if (input.WasDown(OpenTK.Input.Key.Number4))
+
+            if (input.WasDown(Key.Number4))
             {
                 conveyorvelocity += new Vector3(0, 0, -2);
                 conveyorVelocityChanged = true;
             }
 
             if (conveyorVelocityChanged)
-            {
                 foreach (var floorReference in _floorReferences)
                 {
                     floorReference.ConveyorSettings.ConveyorVelocity = conveyorvelocity;
@@ -207,18 +201,22 @@ namespace Demos.Demos
                     floorReference.Activity.SleepThreshold = -1f;
                     Simulation.Awakener.AwakenBody(floorReference.Handle);
                 }
-            }
 
-            if (input.WasPushed(OpenTK.Input.Key.Number5))
-            {
+            if (input.WasPushed(Key.Number5))
                 foreach (var floorReference in _floorReferences)
                 {
                     floorReference.ConveyorSettings.IsLinearConveyor = false;
                     floorReference.Velocity.Linear = Vector3.Zero;
                     floorReference.Activity.SleepThreshold = 0.1f;
                 }
-            }
+
             #endregion
+        }
+
+        public struct BodyProperty
+        {
+            public CollisionGroup Filter;
+            public float Friction;
         }
     }
 }
