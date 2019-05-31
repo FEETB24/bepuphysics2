@@ -67,6 +67,7 @@ namespace Demos.Port.CollisionGroups
         public void Dispose()
         {
             CollisionGroups.Dispose();
+            Events.Dispose();
         }
     }
 }

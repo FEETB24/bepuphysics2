@@ -157,13 +157,6 @@ namespace Demos.Demos
 
         }
 
-        protected override void OnDispose()
-        {
-            base.OnDispose();
-            _bodyProperties.Dispose();
-            _collisionGroups.Dispose();
-            _events.Dispose();
-        }
 
         public override void Update(Window window, Camera camera, Input input, float dt)
         {
