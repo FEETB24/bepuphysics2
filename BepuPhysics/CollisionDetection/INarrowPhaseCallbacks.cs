@@ -90,11 +90,6 @@ namespace BepuPhysics.CollisionDetection
         bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ConvexContactManifold* manifold);
 
         /// <summary>
-        /// Flushes this object.
-        /// </summary>
-        void Flush();
-
-        /// <summary>
         /// Releases any resources held by the callbacks. Called by the owning narrow phase when it is being disposed.
         /// </summary>
         void Dispose();

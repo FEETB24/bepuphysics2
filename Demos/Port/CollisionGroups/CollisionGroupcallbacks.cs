@@ -4,13 +4,14 @@ using BepuPhysics.Collidables;
 using BepuPhysics.CollisionDetection;
 using BepuPhysics.Constraints;
 using Demos.Demos;
+using Demos.Port.EventHandler;
 
 namespace Demos.Port.CollisionGroups
 {
-    public struct CollisionGroupcallbacks: INarrowPhaseCallbacks
+    public struct FeeSimNarrowPhaseCallbacks<TEventHandler> : INarrowPhaseCallbacks where TEventHandler : ICollisionEventHandler
     {
         public BodyProperty<DropCircleTest.BodyProperty> CollisionGroups;
-
+        public CollisionEvents<TEventHandler> Events;
 
         public void Initialize(Simulation simulation)
         {
@@ -23,41 +24,38 @@ namespace Demos.Port.CollisionGroups
             //It's impossible for two statics to collide, and pairs are sorted such that bodies always come before statics.
             if (b.Mobility != CollidableMobility.Static)
             {
-                return CollisionGroup.AllowCollision(CollisionGroups[a.Handle].Filter, CollisionGroups[b.Handle].Filter);
+                return CollisionGroup.AllowDetection(CollisionGroups[a.Handle].Filter, CollisionGroups[b.Handle].Filter);
             }
             return true;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB)
+        {
+            return CollisionGroup.AllowDetection(CollisionGroups[childIndexA].Filter, CollisionGroups[childIndexB].Filter);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, ConvexContactManifold* manifold,
             out PairMaterialProperties pairMaterial)
         {
             CreateMaterial(out pairMaterial);
-            return true;
+            return CollisionGroup.AllowCollision(CollisionGroups[pair.A.Handle].Filter, CollisionGroups[pair.B.Handle].Filter);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, NonconvexContactManifold* manifold,
             out PairMaterialProperties pairMaterial)
         {
             CreateMaterial(out pairMaterial);
-            return true;
+            return CollisionGroup.AllowCollision(CollisionGroups[pair.A.Handle].Filter, CollisionGroups[pair.B.Handle].Filter);
         }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB)
-        {
-            return true;
-        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB,
             ConvexContactManifold* manifold)
         {
-            return true;
+            return CollisionGroup.AllowCollision(CollisionGroups[pair.A.Handle].Filter, CollisionGroups[pair.B.Handle].Filter);
         }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Flush()
-        {
-
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         unsafe void CreateMaterial(out PairMaterialProperties pairMaterial)
         {

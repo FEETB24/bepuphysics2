@@ -320,10 +320,6 @@ namespace Demos.Demos
             return true;
         }
 
-        public void Flush()
-        {
-        }
-
         public void Initialize(Simulation simulation)
         {
             events.Initialize(simulation.Bodies);

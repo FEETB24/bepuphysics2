@@ -113,8 +113,19 @@ namespace Demos.Port.CollisionGroups
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool AllowCollision(in CollisionGroup a, in CollisionGroup b)
         {
-            return  (a.GroupId & b.CollidableSubgroups) != 0;
+            return (a.GroupId & b.CollidableSubgroups) != 0;
         }
 
+        /// <summary>
+        /// Checks if the filters can collide by checking if b's membership can be collided by a's collidable groups.
+        /// </summary>
+        /// <param name="a">First filter to test.</param>
+        /// <param name="b">Second filter to test.</param>
+        /// <returns>True if the filters can collide, false otherwise.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool AllowDetection(in CollisionGroup a, in CollisionGroup b)
+        {
+            return (a.GroupId & b.DetectionSubgroups) != 0;
+        }
     }
 }

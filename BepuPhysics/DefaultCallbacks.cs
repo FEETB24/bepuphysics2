@@ -110,12 +110,6 @@ namespace BepuPhysics
         {
             return true;
         }
-
-        public void Flush()
-        {
-
-        }
-
         public void Dispose()
         {
         }
