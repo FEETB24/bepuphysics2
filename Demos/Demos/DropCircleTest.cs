@@ -8,6 +8,7 @@ using BepuUtilities;
 using BepuUtilities.Collections;
 using DemoContentLoader;
 using DemoRenderer;
+using Demos.Port;
 using Demos.Port.CollisionGroups;
 using Demos.Port.EventHandler;
 using DemoUtilities;
@@ -51,7 +52,7 @@ namespace Demos.Demos
                     CollisionGroups = _bodyProperties
                 };
             Simulation = Simulation.Create(BufferPool, _collisionGroups,
-                new DefaultPoseIntegratorCallbacks(true /*new Vector3(0, -10, 0)*/));
+                new DefaultPoseIntegratorCallbacks(true /*new Vector3(0, -10, 0)*/), timestepper: new CustomPositionLastTimestepper());
             var boxShape = new Box(1, 1, 1);
             boxShape.ComputeInertia(1, out _boxInertia);
             _boxIndex = Simulation.Shapes.Add(boxShape);
@@ -196,8 +197,8 @@ namespace Demos.Demos
             if (conveyorVelocityChanged)
                 foreach (var floorReference in _floorReferences)
                 {
-                    floorReference.ConveyorSettings.ConveyorVelocity = conveyorvelocity;
                     floorReference.ConveyorSettings.IsLinearConveyor = true;
+                    floorReference.ConveyorSettings.ConveyorVelocity = conveyorvelocity;
                     floorReference.Activity.SleepThreshold = -1f;
                     Simulation.Awakener.AwakenBody(floorReference.Handle);
                 }
@@ -206,7 +207,7 @@ namespace Demos.Demos
                 foreach (var floorReference in _floorReferences)
                 {
                     floorReference.ConveyorSettings.IsLinearConveyor = false;
-                    floorReference.Velocity.Linear = Vector3.Zero;
+                    floorReference.ConveyorSettings.ConveyorVelocity = conveyorvelocity;
                     floorReference.Activity.SleepThreshold = 0.1f;
                 }
 

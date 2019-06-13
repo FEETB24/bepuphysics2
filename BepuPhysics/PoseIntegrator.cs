@@ -299,18 +299,12 @@ namespace BepuPhysics
             ref var baseInertias = ref bodies.Inertias[0];
             ref var baseActivity = ref bodies.ActiveSet.Activity[0];
             ref var baseCollidable = ref bodies.ActiveSet.Collidables[0];
-            ref var baseConveyorSettings = ref bodies.ActiveSet.ConveyorSettings[0];
             for (int i = startIndex; i < endIndex; ++i)
             {
                 ref var pose = ref Unsafe.Add(ref basePoses, i);
                 ref var velocity = ref Unsafe.Add(ref baseVelocities, i);
-                ref var conveyorSettings = ref Unsafe.Add(ref baseConveyorSettings, i);
+           
 
-
-                if (conveyorSettings.IsLinearConveyor)
-                {
-                    velocity.Linear = conveyorSettings.LinearVelocity;
-                }
 
                 var previousOrientation = pose.Orientation; //This is unused if conservation of angular momentum is disabled... compiler *may* remove it...
 
@@ -333,12 +327,6 @@ namespace BepuPhysics
                 //While it's a bit goofy just to copy over the inverse mass every frame even if it doesn't change,
                 //it's virtually always gathered together with the inertia tensor and it really isn't worth a whole extra external system to copy inverse masses only on demand.
                 inertia.InverseMass = localInertia.InverseMass;
-
-                if (conveyorSettings.IsLinearConveyor)
-                {
-                    velocity.Linear = conveyorSettings.LinearVelocity + conveyorSettings.ConveyorVelocity;
-                }
-
 
                 IntegrateAngularVelocity(previousOrientation, pose, localInertia, inertia, ref velocity.Angular, dt);
                 callbacks.IntegrateVelocity(i, pose, localInertia, workerIndex, ref velocity);

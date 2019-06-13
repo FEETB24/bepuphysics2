@@ -45,6 +45,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ErrorProne.NET.Structs" Version="0.1.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\BepuUtilities\BepuUtilities.csproj" />
   </ItemGroup>
 

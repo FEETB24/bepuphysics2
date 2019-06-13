@@ -13,7 +13,9 @@ namespace Demos.Port.CollisionGroups
         /// </summary>
         public uint CollidableSubgroups;
 
-
+        /// <summary>
+        /// The detection subgroups.
+        /// </summary>
         public uint DetectionSubgroups;
         /// <summary>
         /// Id of the owner of the object. Objects belonging to different groups always collide.

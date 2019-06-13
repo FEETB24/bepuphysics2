@@ -151,7 +151,7 @@ namespace BepuUtilities.Memory
             }
         }
 
-        struct IgnoreNothing : IPredicate<ulong>
+        readonly struct IgnoreNothing : IPredicate<ulong>
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool Matches(ref ulong item)

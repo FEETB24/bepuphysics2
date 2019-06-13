@@ -38,7 +38,7 @@ namespace BepuPhysics.CollisionDetection
         }
     }
 
-    public struct CollidablePairComparer : IEqualityComparerRef<CollidablePair>
+    public readonly struct CollidablePairComparer : IEqualityComparerRef<CollidablePair>
     {
         //Note that pairs are sorted by handle, so we can assume order matters.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
