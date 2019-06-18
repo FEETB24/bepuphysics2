@@ -35,11 +35,12 @@ namespace Demos.Demos
             var baseShape = new Box(5, 1, 5);
 
 
-            boxShape.ComputeInertia(1, out var boxInertia);
+            boxShape.ComputeInertia(2, out var boxInertia);
 
             var boxShapeIndex = Simulation.Shapes.Add(boxShape);
             var baseShapeIndex = Simulation.Shapes.Add(baseShape);
 
+            Symmetric3x3.Scale(boxInertia.InverseInertiaTensor, .5f, out boxInertia.InverseInertiaTensor);
 
             var boxDescription = new BodyDescription
             {
@@ -75,7 +76,7 @@ namespace Demos.Demos
             _baseReference = new BodyReference(baseIndex, Simulation.Bodies);
 
 
-            var distanceJoint = new DistanceLimit(Vector3.Zero, Vector3.Zero, 5f, 5f, new SpringSettings(5, 1));
+            var distanceJoint = new DistanceLimit(Vector3.Zero, new Vector3(0,.51f,0), 5f, 5f, new SpringSettings(5, 1));
 
             _jointIndex = Simulation.Solver.Add(baseIndex, boxIndex, distanceJoint);
             
@@ -84,7 +85,7 @@ namespace Demos.Demos
 
         unsafe void ChangeLenght(float lenght)
         {
-            var distanceJoint = new DistanceLimit(Vector3.Zero, Vector3.Zero, lenght, lenght, new SpringSettings(2, 1f));
+            var distanceJoint = new DistanceLimit(Vector3.Zero, Vector3.Zero, lenght, lenght, new SpringSettings(2, 10f));
             Simulation.Solver.ApplyDescription(_jointIndex, ref distanceJoint);
         }
 
