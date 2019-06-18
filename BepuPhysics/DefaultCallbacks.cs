@@ -88,7 +88,7 @@ namespace BepuPhysics
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void ConfigureMaterial(out PairMaterialProperties pairMaterial)
         {
-            pairMaterial.FrictionCoefficient = 1f;
+            pairMaterial.FrictionCoefficient = 4;
             pairMaterial.MaximumRecoveryVelocity = 2f;
             pairMaterial.SpringSettings = ContactSpringiness;
         }

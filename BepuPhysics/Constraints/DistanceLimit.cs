@@ -41,6 +41,8 @@ namespace BepuPhysics.Constraints
 
         public Type TypeProcessorType => typeof(DistanceLimitTypeProcessor);
 
+
+
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
