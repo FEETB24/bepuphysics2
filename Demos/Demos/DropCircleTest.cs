@@ -52,7 +52,7 @@ namespace Demos.Demos
                     CollisionGroups = _bodyProperties
                 };
             Simulation = Simulation.Create(BufferPool, _collisionGroups,
-                new DefaultPoseIntegratorCallbacks(true /*new Vector3(0, -10, 0)*/), timestepper: new CustomPositionLastTimestepper());
+                new DefaultPoseIntegratorCallbacks(BufferPool), timestepper: new CustomPositionLastTimestepper());
             var boxShape = new Box(1, 1, 1);
             boxShape.ComputeInertia(1, out _boxInertia);
             _boxIndex = Simulation.Shapes.Add(boxShape);

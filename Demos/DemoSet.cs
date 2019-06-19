@@ -61,6 +61,7 @@ namespace Demos
             AddOption<RopeStabilityDemo>();
             AddOption<SubsteppingDemo>();
             AddOption<GyroscopeTestDemo>();
+            AddOption<ConstraintTestDemo>();
         }
 
         public int Count { get { return options.Count; } }

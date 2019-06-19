@@ -299,11 +299,12 @@ namespace BepuPhysics
             ref var baseInertias = ref bodies.Inertias[0];
             ref var baseActivity = ref bodies.ActiveSet.Activity[0];
             ref var baseCollidable = ref bodies.ActiveSet.Collidables[0];
+            ref var baseBodyIndex = ref bodies.ActiveSet.IndexToHandle[0];
             for (int i = startIndex; i < endIndex; ++i)
             {
                 ref var pose = ref Unsafe.Add(ref basePoses, i);
                 ref var velocity = ref Unsafe.Add(ref baseVelocities, i);
-           
+                ref var bodyIndex = ref Unsafe.Add(ref baseBodyIndex, i);
 
 
                 var previousOrientation = pose.Orientation; //This is unused if conservation of angular momentum is disabled... compiler *may* remove it...
@@ -329,7 +330,7 @@ namespace BepuPhysics
                 inertia.InverseMass = localInertia.InverseMass;
 
                 IntegrateAngularVelocity(previousOrientation, pose, localInertia, inertia, ref velocity.Angular, dt);
-                callbacks.IntegrateVelocity(i, pose, localInertia, workerIndex, ref velocity);
+                callbacks.IntegrateVelocity(bodyIndex, pose, localInertia, workerIndex, ref velocity);
 
 
                 //Bounding boxes are accumulated in a scalar fashion, but the actual bounding box calculations are deferred until a sufficient number of collidables are accumulated to make

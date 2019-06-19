@@ -1,30 +1,81 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using BepuPhysics.Collidables;
 using BepuPhysics.CollisionDetection;
 using BepuPhysics.Constraints;
 using BepuUtilities;
+using BepuUtilities.Collections;
+using BepuUtilities.Memory;
 
 namespace BepuPhysics
 {
 
     public struct DefaultPoseIntegratorCallbacks : IPoseIntegratorCallbacks
     {
+        public static Simulation Simulation;
+
         public Vector3 Gravity;
         public float LinearDamping;
         public float AngularDamping;
         Vector3 gravityDt ;
         float linearDampingDt;
         float angularDampingDt;
+        private float _dt;
+
+        private QuickDictionary<int, float, IntComparer> _angularDampingDictionary;
+        private QuickDictionary<int, float, IntComparer> _linearDampingDictionary;
+
+        public struct IntComparer : IEqualityComparerRef<int>
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool Equals(ref int a, ref int b)
+            {
+                return a == b;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public int Hash(ref int item)
+            {
+                return item;
+            }
+        }
+        public void CustomAngularDamping(int bodyIndex, float angularDamping, IUnmanagedMemoryPool pool)
+        {
+            if (angularDamping == AngularDamping)
+            {
+                _angularDampingDictionary.FastRemove(bodyIndex);
+                return;
+            }
+
+            _angularDampingDictionary.Add(bodyIndex, angularDamping, pool);
+        }
+
+        public void CustomLinearDamping(int bodyIndex, float linearDamping, IUnmanagedMemoryPool pool)
+        {
+            if (linearDamping == LinearDamping)
+            {
+                _linearDampingDictionary.FastRemove(bodyIndex);
+                return;
+            }
+
+            _linearDampingDictionary.Add(bodyIndex, linearDamping, pool);
+        }
+
+
+
 
         public AngularIntegrationMode AngularIntegrationMode => AngularIntegrationMode.Nonconserving;
 
-        public DefaultPoseIntegratorCallbacks(bool _) :this()
+        public DefaultPoseIntegratorCallbacks(IUnmanagedMemoryPool pool) :this()
         {
             Gravity = new Vector3(0,-9.81f,0);
             LinearDamping = 0.03f;
             AngularDamping = 0.03f;
+            _angularDampingDictionary = new QuickDictionary<int, float, IntComparer>(1, pool);
+            _linearDampingDictionary = new QuickDictionary<int, float, IntComparer>(1, pool);
+
         }
 
         public DefaultPoseIntegratorCallbacks(Vector3 gravity, float linearDamping = .03f, float angularDamping = .03f) : this()
@@ -36,11 +87,14 @@ namespace BepuPhysics
 
         public void PrepareForIntegration(float dt)
         {
+            _dt = dt;
             //No reason to recalculate gravity * dt for every body; just cache it ahead of time.
             gravityDt = Gravity * dt;
             //Since this doesn't use per-body damping, we can precalculate everything.
             linearDampingDt = (float)Math.Pow(MathHelper.Clamp(1 - LinearDamping, 0, 1), dt);
+
             angularDampingDt = (float)Math.Pow(MathHelper.Clamp(1 - AngularDamping, 0, 1), dt);
+
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void IntegrateVelocity(int bodyIndex, in RigidPose pose, in BodyInertia localInertia, int workerIndex, ref BodyVelocity velocity)
@@ -48,8 +102,29 @@ namespace BepuPhysics
             //Note that we avoid accelerating kinematics. Kinematics are any body with an inverse mass of zero (so a mass of ~infinity). No force can move them.
             if (localInertia.InverseMass > 0)
             {
-                velocity.Linear = (velocity.Linear + gravityDt) * linearDampingDt;
-                velocity.Angular = velocity.Angular * angularDampingDt;
+                ref var handle = ref Simulation.Bodies.ActiveSet.IndexToHandle[0];
+                ref var index = ref Unsafe.Add(ref handle, bodyIndex);
+
+                if (_linearDampingDictionary.TryGetValue(index, out var linearDamping))
+                {
+                    linearDamping = (float)Math.Pow(MathHelper.Clamp(1 - linearDamping, 0, 1), _dt);
+                    velocity.Linear = (velocity.Linear + gravityDt) * linearDamping;
+                }
+                else
+                {
+                    velocity.Linear = (velocity.Linear + gravityDt) * linearDampingDt;
+                }
+
+                if (_angularDampingDictionary.TryGetValue(index, out var angularDamping))
+                {
+                    angularDamping = (float)Math.Pow(MathHelper.Clamp(1 - angularDamping, 0, 1), _dt);
+                    velocity.Angular = velocity.Angular * angularDamping;
+                }
+                else
+                {
+                    
+                    velocity.Angular = velocity.Angular * angularDampingDt;
+                }
             }
             //Implementation sidenote: Why aren't kinematics all bundled together separately from dynamics to avoid this per-body condition?
             //Because kinematics can have a velocity- that is what distinguishes them from a static object. The solver must read velocities of all bodies involved in a constraint.
@@ -59,6 +134,12 @@ namespace BepuPhysics
             //Note that you CAN technically modify the pose in IntegrateVelocity. The PoseIntegrator has already integrated the previous velocity into the position, but you can modify it again
             //if you really wanted to.
             //This is also a handy spot to implement things like position dependent gravity or per-body damping.
+        }
+
+        public void Dispose(IUnmanagedMemoryPool pool)
+        {
+            _angularDampingDictionary.Dispose(pool);
+            _linearDampingDictionary.Dispose(pool);
         }
 
     }

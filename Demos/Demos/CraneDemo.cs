@@ -23,13 +23,20 @@ namespace Demos.Demos
 
         private float _jointDistance = 5;
 
+        private DefaultPoseIntegratorCallbacks _poseIntegrator;
+
         public override void Initialize(ContentArchive content, Camera camera)
         {
             camera.Position = new Vector3(-30, 8, -60);
             camera.Yaw = MathHelper.Pi * 3f / 4;
             camera.Pitch = 0;
 
-            Simulation = Simulation.Create(BufferPool, new DefaultNarrowPhaseCallbacks(), new DefaultPoseIntegratorCallbacks(true/*new Vector3(0, -10, 0)*/));
+            
+            _poseIntegrator = new DefaultPoseIntegratorCallbacks(BufferPool);
+
+            Simulation = Simulation.Create(BufferPool, new DefaultNarrowPhaseCallbacks(), _poseIntegrator);
+
+            DefaultPoseIntegratorCallbacks.Simulation = Simulation;
 
             var boxShape = new Box(1, 1, 1);
             var baseShape = new Box(5, 1, 5);
@@ -77,15 +84,20 @@ namespace Demos.Demos
 
 
             var distanceJoint = new DistanceLimit(Vector3.Zero, new Vector3(0,.51f,0), 5f, 5f, new SpringSettings(5, 1));
-
             _jointIndex = Simulation.Solver.Add(baseIndex, boxIndex, distanceJoint);
-            
+
+            var angularSwivelHinge = new AngularHinge() { LocalHingeAxisA = Vector3.UnitY, LocalHingeAxisB = Vector3.UnitY, SpringSettings = new SpringSettings(20f, 1f) };
+            Simulation.Solver.Add(baseIndex, boxIndex, angularSwivelHinge);
+
+            _poseIntegrator.CustomAngularDamping(boxIndex, .5f, BufferPool);
+            _poseIntegrator.CustomLinearDamping(boxIndex, .5f, BufferPool);
+
 
         }
 
         unsafe void ChangeLenght(float lenght)
         {
-            var distanceJoint = new DistanceLimit(Vector3.Zero, Vector3.Zero, lenght, lenght, new SpringSettings(2, 10f));
+            var distanceJoint = new DistanceLimit(Vector3.Zero, Vector3.Zero, lenght, lenght, new SpringSettings(10f, 10f));
             Simulation.Solver.ApplyDescription(_jointIndex, ref distanceJoint);
         }
 
@@ -113,13 +125,13 @@ namespace Demos.Demos
             if (input.WasDown(OpenTK.Input.Key.Left))
             {
                 hasVelocity = true;
-                newVelocity.X += 10;
+                newVelocity.X += 2;
             }
 
             if (input.WasDown(OpenTK.Input.Key.Right))
             {
                 hasVelocity = true;
-                newVelocity.X += -10;
+                newVelocity.X += -2;
             }
 
             _baseReference.Velocity.Linear = newVelocity;
@@ -132,5 +144,6 @@ namespace Demos.Demos
             base.Update(window, camera, input, dt);
         }
 
+        
     }
 }
