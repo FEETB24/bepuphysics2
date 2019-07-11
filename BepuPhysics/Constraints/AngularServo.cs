@@ -11,7 +11,7 @@ using Quaternion = BepuUtilities.Quaternion;
 namespace BepuPhysics.Constraints
 {
     /// <summary>
-    /// Description of a constraint which tries to maintain a relative rotation between two bodies.
+    /// Constrains two bodies to have a target relative rotation.
     /// </summary>
     public struct AngularServo : IConstraintDescription<AngularServo>
     {
@@ -19,7 +19,13 @@ namespace BepuPhysics.Constraints
         /// The target relative rotation from body A to body B in body A's local space. The constraint tries to maintain OrientationB = TargetRelativeRotationLocalA * OrientationA.
         /// </summary>
         public Quaternion TargetRelativeRotationLocalA;
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
+        /// <summary>
+        /// Servo control parameters.
+        /// </summary>
         public ServoSettings ServoSettings;
 
         public int ConstraintTypeId
@@ -35,6 +41,8 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertUnitLength(TargetRelativeRotationLocalA, nameof(AngularServo), nameof(TargetRelativeRotationLocalA));
+            ConstraintChecker.AssertValid(ServoSettings, SpringSettings, nameof(AngularServo));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<AngularServoPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             QuaternionWide.WriteFirst(TargetRelativeRotationLocalA, ref target.TargetRelativeRotationLocalA);

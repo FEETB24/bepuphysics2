@@ -8,10 +8,22 @@ using System.Runtime.CompilerServices;
 using static BepuUtilities.GatherScatter;
 namespace BepuPhysics.Constraints
 {
+    /// <summary>
+    /// Angular component of a hinge. Constrains the angular degrees of freedom of two bodies such that they can only rotate relative to each other around the hinge's axis.
+    /// </summary>
     public struct AngularHinge : IConstraintDescription<AngularHinge>
     {
+        /// <summary>
+        /// Hinge axis in the local space of A.
+        /// </summary>
         public Vector3 LocalHingeAxisA;
+        /// <summary>
+        /// Hinge axis in the local space of B.
+        /// </summary>
         public Vector3 LocalHingeAxisB;
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
 
         public int ConstraintTypeId
@@ -27,6 +39,9 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertUnitLength(LocalHingeAxisA, nameof(AngularHinge), nameof(LocalHingeAxisA));
+            ConstraintChecker.AssertUnitLength(LocalHingeAxisB, nameof(AngularHinge), nameof(LocalHingeAxisB));
+            ConstraintChecker.AssertValid(SpringSettings, nameof(AngularHinge));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<AngularHingePrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Vector3Wide.WriteFirst(LocalHingeAxisA, ref target.LocalHingeAxisA);

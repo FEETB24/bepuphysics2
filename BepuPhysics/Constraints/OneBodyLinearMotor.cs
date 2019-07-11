@@ -8,10 +8,22 @@ using System.Runtime.CompilerServices;
 using static BepuUtilities.GatherScatter;
 namespace BepuPhysics.Constraints
 {
+    /// <summary>
+    /// Constrains a point on a body to have a target linear velocity.
+    /// </summary>
     public struct OneBodyLinearMotor : IConstraintDescription<OneBodyLinearMotor>
     {
+        /// <summary>
+        /// Offset to the attachment point in the local space of the body.
+        /// </summary>
         public Vector3 LocalOffset;
+        /// <summary>
+        /// Target velocity of the attachment point.
+        /// </summary>
         public Vector3 TargetVelocity;
+        /// <summary>
+        /// Motor control parameters.
+        /// </summary>
         public MotorSettings Settings;
 
         public int ConstraintTypeId
@@ -27,6 +39,7 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertValid(Settings, nameof(OneBodyLinearMotor));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<OneBodyLinearMotorPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Vector3Wide.WriteFirst(LocalOffset, ref target.LocalOffset);
@@ -67,7 +80,7 @@ namespace BepuPhysics.Constraints
             projection.BiasVelocity = prestep.TargetVelocity;
         }
 
-   
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WarmStart(ref BodyVelocities velocityA, ref OneBodyLinearServoProjection projection, ref Vector3Wide accumulatedImpulse)
         {

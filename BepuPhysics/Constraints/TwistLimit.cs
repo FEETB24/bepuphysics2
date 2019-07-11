@@ -11,7 +11,7 @@ using Quaternion = BepuUtilities.Quaternion;
 namespace BepuPhysics.Constraints
 {
     /// <summary>
-    /// Description of a constraint which tries to maintain a target twist angle range around axes attached to each connected body.
+    /// Constrains two bodies' rotations around attached twist axes to a range of permitted twist angles.
     /// </summary>
     public struct TwistLimit : IConstraintDescription<TwistLimit>
     {
@@ -33,7 +33,9 @@ namespace BepuPhysics.Constraints
         /// Maximum angle between B's axis to measure and A's measurement axis. 
         /// </summary>
         public float MaximumAngle;
-
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
 
         public int ConstraintTypeId
@@ -49,6 +51,9 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertUnitLength(LocalBasisA, nameof(TwistLimit), nameof(LocalBasisA));
+            ConstraintChecker.AssertUnitLength(LocalBasisB, nameof(TwistLimit), nameof(LocalBasisB));
+            ConstraintChecker.AssertValid(SpringSettings, nameof(TwistLimit));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<TwistLimitPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             QuaternionWide.WriteFirst(LocalBasisA, ref target.LocalBasisA);

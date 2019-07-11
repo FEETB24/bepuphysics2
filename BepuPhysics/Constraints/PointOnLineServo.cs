@@ -13,13 +13,25 @@ namespace BepuPhysics.Constraints
     /// </summary>
     public struct PointOnLineServo : IConstraintDescription<PointOnLineServo>
     {
+        /// <summary>
+        /// Local offset from the center of body A to its attachment point.
+        /// </summary>
         public Vector3 LocalOffsetA;
+        /// <summary>
+        /// Local offset from the center of body B to its attachment point.
+        /// </summary>
         public Vector3 LocalOffsetB;
         /// <summary>
         /// Direction of the line in the local space of body A.
         /// </summary>
         public Vector3 LocalDirection;
+        /// <summary>
+        /// Servo control parameters.
+        /// </summary>
         public ServoSettings ServoSettings;
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
 
         public int ConstraintTypeId
@@ -35,6 +47,8 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertUnitLength(LocalDirection, nameof(PointOnLineServo), nameof(LocalDirection));
+            ConstraintChecker.AssertValid(ServoSettings, SpringSettings, nameof(PointOnLineServo));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<PointOnLineServoPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Vector3Wide.WriteFirst(LocalOffsetA, ref target.LocalOffsetA);

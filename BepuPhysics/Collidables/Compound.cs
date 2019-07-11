@@ -27,6 +27,10 @@ namespace BepuPhysics.Collidables
         /// </summary>
         public Buffer<CompoundChild> Children;
 
+        /// <summary>
+        /// Creates a compound shape with no acceleration structure.
+        /// </summary>
+        /// <param name="children">Set of children in the compound.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Compound(Buffer<CompoundChild> children)
         {
@@ -34,14 +38,47 @@ namespace BepuPhysics.Collidables
             Children = children;
         }
 
+        /// <summary>
+        /// Checks if a shape index.
+        /// </summary>
+        /// <param name="shapeIndex">Shape index to analyze.</param>
+        /// <param name="shapeBatches">Shape collection into which the index indexes.</param>
+        /// <returns>True if the index is valid, false otherwise.</returns>
+        public static bool ValidateChildIndex(TypedIndex shapeIndex, Shapes shapeBatches)
+        {
+            if (shapeIndex.Type < 0 || shapeIndex.Type >= shapeBatches.RegisteredTypeSpan)
+            {
+                Debug.Fail("Child shape type needs to fit within the shape batch registered types.");
+                return false;
+            }
+            var batch = shapeBatches[shapeIndex.Type];
+            if (shapeIndex.Index < 0 || shapeIndex.Index >= batch.Capacity)
+            {
+                Debug.Fail("Child shape index should point to a valid buffer location in the sahpe batch.");
+                return false;
+            }
+            if (shapeBatches[shapeIndex.Type].Compound)
+            {
+                Debug.Fail("Child shape type should be convex.");
+                return false;
+            }
+            //TODO: We don't have a cheap way to verify that a specific index actually contains a shape right now.
+            return true;
+        }
 
-        [Conditional("DEBUG")]
-        public static void ValidateChildIndices(ref Buffer<CompoundChild> children, Shapes shapeBatches)
+        /// <summary>
+        /// Checks if a set of children shape indices are all valid.
+        /// </summary>
+        /// <param name="children">Children to examine.</param>
+        /// <param name="shapeBatches">Shape collection into which the children index.</param>
+        /// <returns>True if all child indices are valid, false otherwise.</returns>
+        public static bool ValidateChildIndices(ref Buffer<CompoundChild> children, Shapes shapeBatches)
         {
             for (int i = 0; i < children.Length; ++i)
             {
-                Debug.Assert(shapeBatches[children[i].ShapeIndex.Type].Compound, "All children of a compound must be convex.");
+                ValidateChildIndex(children[i].ShapeIndex, shapeBatches);
             }
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -74,6 +111,7 @@ namespace BepuPhysics.Collidables
         public static void ComputeChildBounds(in CompoundChild child, in Quaternion orientation, Shapes shapeBatches, out Vector3 childMin, out Vector3 childMax)
         {
             GetRotatedChildPose(child.LocalPose, orientation, out var childPose);
+            Debug.Assert(!shapeBatches[child.ShapeIndex.Type].Compound, "All children of a compound must be convex.");
             shapeBatches[child.ShapeIndex.Type].ComputeBounds(child.ShapeIndex.Index, childPose, out childMin, out childMax);
         }
 
@@ -120,38 +158,61 @@ namespace BepuPhysics.Collidables
             AddChildBoundsToBatcher(ref Children, ref batcher, pose, velocity, bodyIndex);
         }
 
-        public bool RayTest(in RigidPose pose, in Vector3 origin, in Vector3 direction, float maximumT, Shapes shapeBatches, out float t, out Vector3 normal)
+        struct WrappedHandler<TRayHitHandler> : IShapeRayHitHandler where TRayHitHandler : IShapeRayHitHandler
         {
-            t = float.MaxValue;
-            normal = new Vector3();
-            for (int i = 0; i < Children.Length; ++i)
-            {
-                ref var child = ref Children[i];
-                GetRotatedChildPose(child.LocalPose, pose.Orientation, out var childPose);
-                //TODO: This is an area that has to be updated for high precision poses.
-                childPose.Position += pose.Position;
-                if (shapeBatches[child.ShapeIndex.Type].RayTest(child.ShapeIndex.Index, childPose, origin, direction, maximumT, out var childT, out var childNormal) && childT < t)
-                {
-                    t = childT;
-                    normal = childNormal;
-                }
-            }
-            return t < float.MaxValue;
-        }
+            public TRayHitHandler HitHandler;
+            public int ChildIndex;
 
-        public void RayTest<TRayHitHandler>(in RigidPose pose, Shapes shapeBatches, ref RaySource rays, ref TRayHitHandler hitHandler) where TRayHitHandler : struct, IShapeRayBatchHitHandler
-        {
-            for (int i = 0; i < Children.Length; ++i)
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool AllowTest(int childIndex)
             {
-                ref var child = ref Children[i];
-                GetRotatedChildPose(child.LocalPose, pose.Orientation, out var childPose);
-                //TODO: This is an area that has to be updated for high precision poses.
-                childPose.Position += pose.Position;
-                //Note that this will report an impact for every child, even if it's not the first impact.
-                shapeBatches[child.ShapeIndex.Type].RayTest(child.ShapeIndex.Index, childPose, ref rays, ref hitHandler);
+                return HitHandler.AllowTest(childIndex);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void OnRayHit(in RayData ray, ref float maximumT, float t, in Vector3 normal, int childIndex)
+            {
+                Debug.Assert(childIndex == 0, "All compound children should be convexes, so they should report a child index of 0.");
+                Debug.Assert(maximumT >= t, "Whatever generated this ray hit should have obeyed the current maximumT value.");
+                //Note the use of the child index given to the instance, not the parameter.
+                HitHandler.OnRayHit(ray, ref maximumT, t, normal, ChildIndex);
             }
         }
 
+        public void RayTest<TRayHitHandler>(in RigidPose pose, in RayData ray, ref float maximumT, Shapes shapeBatches, ref TRayHitHandler hitHandler) where TRayHitHandler : struct, IShapeRayHitHandler
+        {
+            WrappedHandler<TRayHitHandler> wrappedHandler;
+            wrappedHandler.HitHandler = hitHandler;
+            for (int i = 0; i < Children.Length; ++i)
+            {
+                ref var child = ref Children[i];
+                wrappedHandler.ChildIndex = i;
+                GetRotatedChildPose(child.LocalPose, pose.Orientation, out var childPose);
+                //TODO: This is an area that has to be updated for high precision poses.
+                childPose.Position += pose.Position;
+                shapeBatches[child.ShapeIndex.Type].RayTest(child.ShapeIndex.Index, childPose, ray, ref maximumT, ref wrappedHandler);
+            }
+            //Preserve any mutations.
+            hitHandler = wrappedHandler.HitHandler;
+        }
+
+        public void RayTest<TRayHitHandler>(in RigidPose pose, ref RaySource rays, Shapes shapeBatches, ref TRayHitHandler hitHandler) where TRayHitHandler : struct, IShapeRayHitHandler
+        {
+            WrappedHandler<TRayHitHandler> wrappedHandler;
+            wrappedHandler.HitHandler = hitHandler;
+            for (int i = 0; i < Children.Length; ++i)
+            {
+                ref var child = ref Children[i];
+                wrappedHandler.ChildIndex = i;
+                GetRotatedChildPose(child.LocalPose, pose.Orientation, out var childPose);
+                //TODO: This is an area that has to be updated for high precision poses.
+                childPose.Position += pose.Position;
+                shapeBatches[child.ShapeIndex.Type].RayTest(child.ShapeIndex.Index, childPose, ref rays, ref wrappedHandler);
+            }
+            //Preserve any mutations.
+            hitHandler = wrappedHandler.HitHandler;
+        }
+        
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ShapeBatch CreateShapeBatch(BufferPool pool, int initialCapacity, Shapes shapes)
         {
@@ -213,7 +274,7 @@ namespace BepuPhysics.Collidables
             }
 
         }
-        
+
         public void Dispose(BufferPool bufferPool)
         {
             bufferPool.Return(ref Children);

@@ -18,6 +18,9 @@ namespace BepuPhysics.Constraints
         /// 2 times the target area of the triangle. Computed from ||ab x ac||.
         /// </summary>
         public float TargetScaledArea;
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
 
         /// <summary>
@@ -47,6 +50,8 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            Debug.Assert(TargetScaledArea >= 0, "AreaConstraint.TargetScaledArea must be nonnegative.");
+            ConstraintChecker.AssertValid(SpringSettings, nameof(AreaConstraint));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<AreaConstraintPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Unsafe.As<Vector<float>, float>(ref target.TargetScaledArea) = TargetScaledArea;

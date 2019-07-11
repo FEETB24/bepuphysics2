@@ -13,7 +13,13 @@ namespace BepuPhysics.Constraints
     /// </summary>
     public struct LinearAxisLimit : IConstraintDescription<LinearAxisLimit>
     {
+        /// <summary>
+        /// Local offset from the center of body A to its attachment point.
+        /// </summary>
         public Vector3 LocalOffsetA;
+        /// <summary>
+        /// Local offset from the center of body B to its attachment point.
+        /// </summary>
         public Vector3 LocalOffsetB;
         /// <summary>
         /// Direction of the motorized axis in the local space of body A.
@@ -27,6 +33,9 @@ namespace BepuPhysics.Constraints
         /// Maximum offset along the world axis between A and B's anchor points.
         /// </summary>
         public float MaximumOffset;
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
 
         public int ConstraintTypeId
@@ -42,6 +51,9 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            Debug.Assert(MaximumOffset >= MinimumOffset, "LinearAxisLimit.MaximumOffset must be greater than or equal to LinearAxisLimit.MinimumOffset.");
+            ConstraintChecker.AssertUnitLength(LocalAxis, nameof(LinearAxisLimit), nameof(LocalAxis));
+            ConstraintChecker.AssertValid(SpringSettings, nameof(LinearAxisLimit));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<LinearAxisLimitPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Vector3Wide.WriteFirst(LocalOffsetA, ref target.LocalOffsetA);

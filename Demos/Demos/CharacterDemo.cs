@@ -35,6 +35,8 @@ namespace Demos.Demos
         float speed;
         Capsule shape;
 
+        public int BodyHandle { get { return bodyHandle; } }
+
         public CharacterInput(CharacterControllers characters, Vector3 initialPosition, Capsule shape,
             float speculativeMargin, float mass, float maximumHorizontalForce, float maximumVerticalGlueForce,
             float jumpVelocity, float speed, float maximumSlope = MathF.PI * 0.25f)
@@ -43,7 +45,7 @@ namespace Demos.Demos
             var shapeIndex = characters.Simulation.Shapes.Add(shape);
 
             bodyHandle = characters.Simulation.Bodies.Add(BodyDescription.CreateDynamic(initialPosition, new BodyInertia { InverseMass = 1f / mass }, new CollidableDescription(shapeIndex, speculativeMargin), new BodyActivityDescription(shape.Radius * 0.02f)));
-            ref var character = ref characters.AllocateCharacter(bodyHandle, out var characterIndex);
+            ref var character = ref characters.AllocateCharacter(bodyHandle);
             character.LocalUp = new Vector3(0, 1, 0);
             character.CosMaximumSlope = MathF.Cos(maximumSlope);
             character.JumpVelocity = jumpVelocity;
@@ -63,7 +65,7 @@ namespace Demos.Demos
         static Key Jump = Key.Space;
         static Key JumpAlternate = Key.BackSpace; //I have a weird keyboard.
 
-        public void UpdateCharacterGoals(Input input, Camera camera)
+        public void UpdateCharacterGoals(Input input, Camera camera, float simulationTimestepDuration)
         {
             Vector2 movementDirection = default;
             if (input.IsDown(MoveForward))
@@ -82,16 +84,17 @@ namespace Demos.Demos
             {
                 movementDirection += new Vector2(1, 0);
             }
-            var lengthSquared = movementDirection.LengthSquared();
-            if (lengthSquared > 0)
+            var movementDirectionLengthSquared = movementDirection.LengthSquared();
+            if (movementDirectionLengthSquared > 0)
             {
-                movementDirection /= MathF.Sqrt(lengthSquared);
+                movementDirection /= MathF.Sqrt(movementDirectionLengthSquared);
             }
 
             ref var character = ref characters.GetCharacterByBodyHandle(bodyHandle);
             character.TryJump = input.WasPushed(Jump) || input.WasPushed(JumpAlternate);
             var characterBody = new BodyReference(bodyHandle, characters.Simulation.Bodies);
-            var newTargetVelocity = movementDirection * (input.IsDown(Sprint) ? speed * 1.75f : speed);
+            var effectiveSpeed = input.IsDown(Sprint) ? speed * 1.75f : speed;
+            var newTargetVelocity = movementDirection * effectiveSpeed;
             var viewDirection = camera.Forward;
             //Modifying the character's raw data does not automatically wake the character up, so we do so explicitly if necessary.
             //If you don't explicitly wake the character up, it won't respond to the changed motion goals.
@@ -105,6 +108,37 @@ namespace Demos.Demos
             }
             character.TargetVelocity = newTargetVelocity;
             character.ViewDirection = viewDirection;
+
+            //The character's motion constraints aren't active while the character is in the air, so if we want air control, we'll need to apply it ourselves.
+            //(You could also modify the constraints to do this, but the robustness of solved constraints tends to be a lot less important for air control.)
+            //There isn't any one 'correct' way to implement air control- it's a nonphysical gameplay thing, and this is just one way to do it.
+            //Note that this permits accelerating along a particular direction, and never attempts to slow down the character.
+            //This allows some movement quirks common in some game character controllers.
+            //Consider what happens if, starting from a standstill, you accelerate fully along X, then along Z- your full velocity magnitude will be sqrt(2) * maximumAirSpeed.
+            //Feel free to try alternative implementations. Again, there is no one correct approach.
+            if (!character.Supported && movementDirectionLengthSquared > 0)
+            {
+                Quaternion.Transform(character.LocalUp, characterBody.Pose.Orientation, out var characterUp);
+                var characterRight = Vector3.Cross(character.ViewDirection, characterUp);
+                var rightLengthSquared = characterRight.LengthSquared();
+                if (rightLengthSquared > 1e-10f)
+                {
+                    characterRight /= MathF.Sqrt(rightLengthSquared);
+                    var characterForward = Vector3.Cross(characterUp, characterRight);
+                    var worldMovementDirection = characterRight * movementDirection.X + characterForward * movementDirection.Y;
+                    var currentVelocity = Vector3.Dot(characterBody.Velocity.Linear, worldMovementDirection);
+                    //We'll arbitrarily set air control to be a fraction of supported movement's speed/force.
+                    const float airControlForceScale = .2f;
+                    const float airControlSpeedScale = .2f;
+                    var airAccelerationDt = characterBody.LocalInertia.InverseMass * character.MaximumHorizontalForce * airControlForceScale * simulationTimestepDuration;
+                    var maximumAirSpeed = effectiveSpeed * airControlSpeedScale;
+                    var targetVelocity = MathF.Min(currentVelocity + airAccelerationDt, maximumAirSpeed);
+                    //While we shouldn't allow the character to continue accelerating in the air indefinitely, trying to move in a given direction should never slow us down in that direction.
+                    var velocityChangeAlongMovementDirection = MathF.Max(0, targetVelocity - currentVelocity);
+                    characterBody.Velocity.Linear += worldMovementDirection * velocityChangeAlongMovementDirection;
+                    Debug.Assert(characterBody.IsActive, "Velocity changes don't automatically update objects; the character should have already been woken up before applying air control.");
+                }
+            }
         }
 
         public void UpdateCameraPosition(Camera camera, float cameraBackwardOffsetScale = 4)
@@ -319,12 +353,64 @@ namespace Demos.Demos
 
             Simulation.Bodies.Add(BodyDescription.CreateConvexDynamic(new Vector3(0, 2.25f, 35.5f), 0.5f, Simulation.Shapes, new Box(1f, 1f, 1f)));
 
+            //Create some moving platforms to jump on.
+            movingPlatforms = new MovingPlatform[16];
+            Func<double, RigidPose> poseCreator = time =>
+            {
+                RigidPose pose;
+                var horizontalScale = (float)(45 + 10 * Math.Sin(time * 0.015));
+                //Float in a noisy ellipse around the newt.
+                pose.Position = new Vector3(0.7f * horizontalScale * (float)Math.Sin(time * 0.1), 10 + 4 * (float)Math.Sin((time + Math.PI * 0.5f) * 0.25), horizontalScale * (float)Math.Cos(time * 0.1));
+                //As the platform goes behind the newt, dip toward the ground. Use smoothstep for a less jerky ride.
+                var x = MathF.Max(0f, MathF.Min(1f, 1f - (pose.Position.Z + 20f) / -20f));
+                var smoothStepped = 3 * x * x - 2 * x * x * x;
+                pose.Position.Y = smoothStepped * (pose.Position.Y - 0.025f) + 0.025f;
+                pose.Orientation = Quaternion.Identity;
+                return pose;
+            };
+            var platformCollidable = new CollidableDescription(Simulation.Shapes.Add(new Box(5, 1, 5)), 0.1f);
+            for (int i = 0; i < movingPlatforms.Length; ++i)
+            {
+                movingPlatforms[i] = new MovingPlatform(platformCollidable, i * 3559, 1f / 60f, Simulation, poseCreator);
+            }
+
             //Prevent the character from falling into the void.
             Simulation.Statics.Add(new StaticDescription(new Vector3(0, 0, 0), new CollidableDescription(Simulation.Shapes.Add(new Box(200, 1, 200)), 0.1f)));
         }
 
+
+        struct MovingPlatform
+        {
+            public int BodyHandle;
+            public float InverseGoalSatisfactionTime;
+            public double TimeOffset;
+            public Func<double, RigidPose> PoseCreator;
+
+            public MovingPlatform(CollidableDescription collidable, double timeOffset, float goalSatisfactionTime, Simulation simulation, Func<double, RigidPose> poseCreator)
+            {
+                PoseCreator = poseCreator;
+                BodyHandle = simulation.Bodies.Add(BodyDescription.CreateKinematic(poseCreator(timeOffset), collidable, new BodyActivityDescription(-1)));
+                InverseGoalSatisfactionTime = 1f / goalSatisfactionTime;
+                TimeOffset = timeOffset;
+            }
+
+            public void Update(Simulation simulation, double time)
+            {
+                var body = new BodyReference(BodyHandle, simulation.Bodies);
+                ref var pose = ref body.Pose;
+                ref var velocity = ref body.Velocity;
+                var targetPose = PoseCreator(time + TimeOffset);
+                velocity.Linear = (targetPose.Position - pose.Position) * InverseGoalSatisfactionTime;
+                Quaternion.GetRelativeRotationWithoutOverlap(pose.Orientation, targetPose.Orientation, out var rotation);
+                Quaternion.GetAxisAngleFromQuaternion(rotation, out var axis, out var angle);
+                velocity.Angular = axis * (angle * InverseGoalSatisfactionTime);
+            }
+        }
+        MovingPlatform[] movingPlatforms;
+
         bool characterActive;
         CharacterInput character;
+        double time;
         void CreateCharacter(Vector3 position)
         {
             characterActive = true;
@@ -333,6 +419,7 @@ namespace Demos.Demos
 
         public override void Update(Window window, Camera camera, Input input, float dt)
         {
+            const float simulationDt = 1 / 60f;
             if (input.WasPushed(Key.C))
             {
                 if (characterActive)
@@ -347,7 +434,13 @@ namespace Demos.Demos
             }
             if (characterActive)
             {
-                character.UpdateCharacterGoals(input, camera);
+                character.UpdateCharacterGoals(input, camera, simulationDt);
+            }
+            //Using a fixed time per update to match the demos simulation update rate.
+            time += 1 / 60f;
+            for (int i = 0; i < movingPlatforms.Length; ++i)
+            {
+                movingPlatforms[i].Update(Simulation, time);
             }
             base.Update(window, camera, input, dt);
         }

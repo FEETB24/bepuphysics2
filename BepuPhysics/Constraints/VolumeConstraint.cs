@@ -18,6 +18,9 @@ namespace BepuPhysics.Constraints
         /// 6 times the target volume of the tetrahedra. Computed from (ab x ac) * ad; this may be negative depending on the winding of the tetrahedron.
         /// </summary>
         public float TargetScaledVolume;
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
 
         /// <summary>
@@ -48,6 +51,7 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertValid(SpringSettings, nameof(VolumeConstraint));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<VolumeConstraintPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Unsafe.As<Vector<float>, float>(ref target.TargetScaledVolume) = TargetScaledVolume;
@@ -205,7 +209,7 @@ namespace BepuPhysics.Constraints
 
 
     /// <summary>
-    /// Handles the solve iterations of a bunch of ball socket constraints.
+    /// Handles the solve iterations of a bunch of volume constraints.
     /// </summary>
     public class VolumeConstraintTypeProcessor : FourBodyTypeProcessor<VolumeConstraintPrestepData, VolumeConstraintProjection, Vector<float>, VolumeConstraintFunctions>
     {

@@ -15,8 +15,17 @@ namespace BepuPhysics.Constraints
     /// </summary>
     public struct AngularAxisMotor : IConstraintDescription<AngularAxisMotor>
     {
+        /// <summary>
+        /// Axis of rotation in body A's local space.
+        /// </summary>
         public Vector3 LocalAxisA;
+        /// <summary>
+        /// Target relative angular velocity around the axis.
+        /// </summary>
         public float TargetVelocity;
+        /// <summary>
+        /// Motor control parameters.
+        /// </summary>
         public MotorSettings Settings;
 
         public int ConstraintTypeId
@@ -29,9 +38,11 @@ namespace BepuPhysics.Constraints
         }
 
         public Type TypeProcessorType => typeof(AngularAxisMotorTypeProcessor);
-
+        
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertUnitLength(LocalAxisA, nameof(AngularAxisMotor), nameof(LocalAxisA));
+            ConstraintChecker.AssertValid(Settings, nameof(AngularAxisMotor));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<AngularAxisMotorPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Vector3Wide.WriteFirst(LocalAxisA, ref target.LocalAxisA);

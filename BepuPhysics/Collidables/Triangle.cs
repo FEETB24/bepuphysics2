@@ -8,6 +8,7 @@ using System.Diagnostics;
 using Quaternion = BepuUtilities.Quaternion;
 using BepuUtilities;
 using BepuPhysics.CollisionDetection;
+using BepuPhysics.Trees;
 
 namespace BepuPhysics.Collidables
 {
@@ -16,10 +17,25 @@ namespace BepuPhysics.Collidables
     /// </summary>
     public struct Triangle : IConvexShape
     {
+        /// <summary>
+        /// First vertex of the triangle in local space.
+        /// </summary>
         public Vector3 A;
+        /// <summary>
+        /// Second vertex of the triangle in local space.
+        /// </summary>
         public Vector3 B;
+        /// <summary>
+        /// Third vertex of the triangle in local space.
+        /// </summary>
         public Vector3 C;
 
+        /// <summary>
+        /// Creates a triangle shape.
+        /// </summary>
+        /// <param name="a">First vertex of the triangle in local space.</param>
+        /// <param name="b">Second vertex of the triangle in local space.</param>
+        /// <param name="c">Third vertex of the triangle in local space.</param>
         public Triangle(in Vector3 a, in Vector3 b, in Vector3 c)
         {
             A = a;
@@ -97,7 +113,6 @@ namespace BepuPhysics.Collidables
             }
             return false;
         }
-
 
         public void ComputeInertia(float mass, out BodyInertia inertia)
         {

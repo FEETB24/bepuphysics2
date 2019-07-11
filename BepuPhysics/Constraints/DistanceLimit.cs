@@ -14,12 +14,35 @@ namespace BepuPhysics.Constraints
     /// </summary>
     public struct DistanceLimit : IConstraintDescription<DistanceLimit>
     {
+        /// <summary>
+        /// Local offset from the center of body A to its attachment point.
+        /// </summary>
         public Vector3 LocalOffsetA;
+        /// <summary>
+        /// Local offset from the center of body B to its attachment point.
+        /// </summary>
         public Vector3 LocalOffsetB;
+        /// <summary>
+        /// Minimum distance permitted between the point on A and the point on B.
+        /// </summary>
         public float MinimumDistance;
+        /// <summary>
+        /// Maximum distance permitted between the point on A and the point on B.
+        /// </summary>
         public float MaximumDistance;
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
 
+        /// <summary>
+        /// Creates a distance limit description.
+        /// </summary>
+        /// <param name="localOffsetA">Local offset from the center of body A to its attachment point.</param>
+        /// <param name="localOffsetB">Local offset from the center of body B to its attachment point.</param>
+        /// <param name="minimumDistance">Minimum distance permitted between the point on A and the point on B.</param>
+        /// <param name="maximumDistance">Maximum distance permitted between the point on A and the point on B.</param>
+        /// <param name="springSettings">Spring frequency and damping parameters.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public DistanceLimit(in Vector3 localOffsetA, in Vector3 localOffsetB, float minimumDistance, float maximumDistance, in SpringSettings springSettings)
         {
@@ -45,6 +68,10 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            Debug.Assert(MinimumDistance >= 0, "DistanceLimit.MinimumDistance must be nonnegative.");
+            Debug.Assert(MaximumDistance >= 0, "DistanceLimit.MaximumDistance must be nonnegative.");
+            Debug.Assert(MaximumDistance >= MinimumDistance, "DistanceLimit.MaximumDistance must be greater than or equal to DistanceLimit.MinimumDistance.");
+            ConstraintChecker.AssertValid(SpringSettings, nameof(DistanceLimit));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<DistanceLimitPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Vector3Wide.WriteFirst(LocalOffsetA, ref target.LocalOffsetA);

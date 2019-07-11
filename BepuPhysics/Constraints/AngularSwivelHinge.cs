@@ -8,10 +8,22 @@ using System.Runtime.CompilerServices;
 using static BepuUtilities.GatherScatter;
 namespace BepuPhysics.Constraints
 {
+    /// <summary>
+    /// Constrains two bodies with the angular component of a swivel hinge that allows rotation around two axes, like a laptop monitor hinge that allows flipping the screen.
+    /// </summary>
     public struct AngularSwivelHinge : IConstraintDescription<AngularSwivelHinge>
     {
+        /// <summary>
+        /// Swivel axis in the local space of body A.
+        /// </summary>
         public Vector3 LocalSwivelAxisA;
+        /// <summary>
+        /// Hinge axis in the local space of body B.
+        /// </summary>
         public Vector3 LocalHingeAxisB;
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
 
         public int ConstraintTypeId
@@ -27,6 +39,9 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertUnitLength(LocalSwivelAxisA, nameof(AngularSwivelHinge), nameof(LocalSwivelAxisA));
+            ConstraintChecker.AssertUnitLength(LocalHingeAxisB, nameof(AngularSwivelHinge), nameof(LocalHingeAxisB));
+            ConstraintChecker.AssertValid(SpringSettings, nameof(AngularSwivelHinge));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<AngularSwivelHingePrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Vector3Wide.WriteFirst(LocalSwivelAxisA, ref target.LocalSwivelAxisA);
@@ -40,7 +55,7 @@ namespace BepuPhysics.Constraints
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var source = ref GetOffsetInstance(ref Buffer<AngularSwivelHingePrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Vector3Wide.ReadFirst(source.LocalSwivelAxisA, out description.LocalSwivelAxisA);
-            Vector3Wide.ReadFirst(source.LocalHingeAxisB, out description.LocalHingeAxisB);            
+            Vector3Wide.ReadFirst(source.LocalHingeAxisB, out description.LocalHingeAxisB);
             description.SpringSettings.AngularFrequency = GetFirst(ref source.SpringSettings.AngularFrequency);
             description.SpringSettings.TwiceDampingRatio = GetFirst(ref source.SpringSettings.TwiceDampingRatio);
         }

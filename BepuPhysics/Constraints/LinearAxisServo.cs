@@ -13,7 +13,13 @@ namespace BepuPhysics.Constraints
     /// </summary>
     public struct LinearAxisServo : IConstraintDescription<LinearAxisServo>
     {
+        /// <summary>
+        /// Local offset from the center of body A to its attachment point.
+        /// </summary>
         public Vector3 LocalOffsetA;
+        /// <summary>
+        /// Local offset from the center of body B to its attachment point.
+        /// </summary>
         public Vector3 LocalOffsetB;
         /// <summary>
         /// Direction of the plane normal in the local space of body A.
@@ -23,7 +29,13 @@ namespace BepuPhysics.Constraints
         /// Target offset from A's plane anchor to B's anchor along the plane normal.
         /// </summary>
         public float TargetOffset;
+        /// <summary>
+        /// Servo control parameters.
+        /// </summary>
         public ServoSettings ServoSettings;
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
 
         public int ConstraintTypeId
@@ -39,6 +51,8 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertUnitLength(LocalPlaneNormal, nameof(LinearAxisServo), nameof(LocalPlaneNormal));
+            ConstraintChecker.AssertValid(ServoSettings, SpringSettings, nameof(LinearAxisServo));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<LinearAxisServoPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Vector3Wide.WriteFirst(LocalOffsetA, ref target.LocalOffsetA);

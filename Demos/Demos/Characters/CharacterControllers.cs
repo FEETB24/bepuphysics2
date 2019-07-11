@@ -93,7 +93,6 @@ namespace Demos.Demos.Characters
         /// </summary>
         public Simulation Simulation { get; private set; }
         BufferPool pool;
-        IdPool characterIdPool;
 
         Buffer<int> bodyHandleToCharacterIndex;
         QuickList<CharacterController> characters;
@@ -113,7 +112,6 @@ namespace Demos.Demos.Characters
         {
             this.pool = pool;
             characters = new QuickList<CharacterController>(initialCharacterCapacity, pool);
-            characterIdPool = new IdPool(initialCharacterCapacity, pool);
             ResizeBodyHandleCapacity(initialBodyHandleCapacity);
             analyzeContactsWorker = AnalyzeContactsWorker;
         }
@@ -141,15 +139,38 @@ namespace Demos.Demos.Characters
             }
         }
 
+        /// <summary>
+        /// Gets the current memory slot index of a character using its associated body handle.
+        /// </summary>
+        /// <param name="bodyHandle">Body handle associated with the character to look up the index of.</param>
+        /// <returns>Index of the character associated with the body handle.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetCharacterIndexForBodyHandle(int bodyHandle)
+        {
+            Debug.Assert(bodyHandle >= 0 && bodyHandle < bodyHandleToCharacterIndex.Length && bodyHandleToCharacterIndex[bodyHandle] >= 0, "Can only look up indices for body handles associated with characters in this CharacterControllers instance.");
+            return bodyHandleToCharacterIndex[bodyHandle];
+        }
+
+        /// <summary>
+        /// Gets a reference to the character at the given memory slot index.
+        /// </summary>
+        /// <param name="index">Index of the character to retrieve.</param>
+        /// <returns>Reference to the character at the given memory slot index.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref CharacterController GetCharacterByIndex(int index)
         {
             return ref characters[index];
         }
 
+        /// <summary>
+        /// Gets a reference to the character using the handle of the character's body.
+        /// </summary>
+        /// <param name="bodyHandle">Body handle of the character to look up.</param>
+        /// <returns>Reference to the character associated with the given body handle.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref CharacterController GetCharacterByBodyHandle(int bodyHandle)
         {
+            Debug.Assert(bodyHandle >= 0 && bodyHandle < bodyHandleToCharacterIndex.Length && bodyHandleToCharacterIndex[bodyHandle] >= 0, "Can only look up indices for body handles associated with characters in this CharacterControllers instance.");
             return ref characters[bodyHandleToCharacterIndex[bodyHandle]];
         }
 
@@ -157,18 +178,15 @@ namespace Demos.Demos.Characters
         /// Allocates a character.
         /// </summary>
         /// <param name="bodyHandle">Body handle associated with the character.</param>
-        /// <param name="characterIndex">Index of the allocated character.</param>
         /// <returns>Reference to the allocated character.</returns>
-        public ref CharacterController AllocateCharacter(int bodyHandle, out int characterIndex)
+        public ref CharacterController AllocateCharacter(int bodyHandle)
         {
             Debug.Assert(bodyHandle >= 0 && (bodyHandle >= bodyHandleToCharacterIndex.Length || bodyHandleToCharacterIndex[bodyHandle] == -1),
                 "Cannot allocate more than one character for the same body handle.");
-            characterIndex = characterIdPool.Take();
-            characters.EnsureCapacity(characterIndex + 1, pool);
             if (bodyHandle >= bodyHandleToCharacterIndex.Length)
                 ResizeBodyHandleCapacity(Math.Max(bodyHandle + 1, bodyHandleToCharacterIndex.Length * 2));
-            characterIndex = characters.Count;
-            ref var character = ref characters.AllocateUnsafely();
+            var characterIndex = characters.Count;
+            ref var character = ref characters.Allocate(pool);
             character = default;
             character.BodyHandle = bodyHandle;
             bodyHandleToCharacterIndex[bodyHandle] = characterIndex;
@@ -480,6 +498,23 @@ namespace Demos.Demos.Characters
                             supportCandidate = workerCandidate;
                         }
                     }
+                    //We need to protect against one possible corner case: if the body supporting the character was removed, the associated motion constraint was also removed.
+                    //Arbitrarily un-support the character if we detect this.      
+                    if (character.Supported)
+                    {
+                        //If the constraint no longer exists at all, 
+                        if (!Simulation.Solver.ConstraintExists(character.MotionConstraintHandle) ||
+                            //or if the constraint does exist but is now used by a different constraint type,
+                            (Simulation.Solver.HandleToConstraint[character.MotionConstraintHandle].TypeId != DynamicCharacterMotionTypeProcessor.BatchTypeId &&
+                            Simulation.Solver.HandleToConstraint[character.MotionConstraintHandle].TypeId != StaticCharacterMotionTypeProcessor.BatchTypeId))
+                        {
+                            //then the character isn't actually supported anymore.
+                            character.Supported = false;
+                        }
+                        //Note that it's sufficient to only check that the type matches the dynamic motion constraint type id because no other systems ever create dynamic character motion constraints.
+                        //Other systems may result in the constraint's removal, but no other system will ever *create* it.
+                        //Further, during this analysis loop, we do not create any constraints. We only set up pending additions to be processed after the multithreaded analysis completes.
+                    }
 
                     //The body is active. We may need to remove the associated constraint from the solver. Remove if any of the following hold:
                     //1) The character was previously supported but is no longer.
@@ -766,9 +801,18 @@ namespace Demos.Demos.Characters
         /// <param name="bodyHandleCapacity">Target number of body handles to allocate space for.</param>
         public void Resize(int characterCapacity, int bodyHandleCapacity)
         {
-            var targetHandleCapacity = BufferPool.GetCapacityForCount<int>(Math.Max(characterIdPool.HighestPossiblyClaimedId + 1, bodyHandleCapacity));
+            int lastOccupiedIndex = -1;
+            for (int i = bodyHandleToCharacterIndex.Length - 1; i >= 0; --i)
+            {
+                if (bodyHandleToCharacterIndex[i] != -1)
+                {
+                    lastOccupiedIndex = i;
+                    break;
+                }
+            }
+            var targetHandleCapacity = BufferPool.GetCapacityForCount<int>(Math.Max(lastOccupiedIndex + 1, bodyHandleCapacity));
             if (targetHandleCapacity != bodyHandleToCharacterIndex.Length)
-                pool.ResizeToAtLeast(ref bodyHandleToCharacterIndex, targetHandleCapacity, characterIdPool.HighestPossiblyClaimedId);
+                ResizeBodyHandleCapacity(targetHandleCapacity);
 
             var targetCharacterCapacity = BufferPool.GetCapacityForCount<int>(Math.Max(characters.Count, characterCapacity));
             if (targetCharacterCapacity != characters.Span.Length)
@@ -786,7 +830,6 @@ namespace Demos.Demos.Characters
                 disposed = true;
                 Simulation.Timestepper.BeforeCollisionDetection -= PrepareForContacts;
                 Simulation.Timestepper.CollisionsDetected -= AnalyzeContacts;
-                characterIdPool.Dispose(pool);
                 characters.Dispose(pool);
                 pool.Return(ref bodyHandleToCharacterIndex);
             }

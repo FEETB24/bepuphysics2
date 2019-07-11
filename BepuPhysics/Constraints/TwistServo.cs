@@ -11,7 +11,7 @@ using Quaternion = BepuUtilities.Quaternion;
 namespace BepuPhysics.Constraints
 {
     /// <summary>
-    /// Description of a constraint which tries to maintain a target twist angle around an axis attached to each connected body.
+    /// Constrains two bodies to maintain a target twist angle around body-attached axes.
     /// </summary>
     public struct TwistServo : IConstraintDescription<TwistServo>
     {
@@ -29,8 +29,13 @@ namespace BepuPhysics.Constraints
         /// Target angle between B's axis to measure and A's measurement axis. 
         /// </summary>
         public float TargetAngle;
-
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
+        /// <summary>
+        /// Servo control parameters.
+        /// </summary>
         public ServoSettings ServoSettings;
 
         public int ConstraintTypeId
@@ -46,6 +51,9 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertUnitLength(LocalBasisA, nameof(TwistServo), nameof(LocalBasisA));
+            ConstraintChecker.AssertUnitLength(LocalBasisB, nameof(TwistServo), nameof(LocalBasisB));
+            ConstraintChecker.AssertValid(ServoSettings, SpringSettings, nameof(TwistServo));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<TwistServoPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             QuaternionWide.WriteFirst(LocalBasisA, ref target.LocalBasisA);

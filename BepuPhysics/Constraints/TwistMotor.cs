@@ -11,7 +11,7 @@ using Quaternion = BepuUtilities.Quaternion;
 namespace BepuPhysics.Constraints
 {
     /// <summary>
-    /// Description of a constraint which controls the twist velocity along axes attached to two bodies.
+    /// Constrains the twist velocity between two bodies to a target.
     /// </summary>
     public struct TwistMotor : IConstraintDescription<TwistMotor>
     {
@@ -27,6 +27,9 @@ namespace BepuPhysics.Constraints
         /// Goal relative twist velocity around the body axes.
         /// </summary>
         public float TargetVelocity;
+        /// <summary>
+        /// Motor control parameters.
+        /// </summary>
         public MotorSettings Settings;
 
         public int ConstraintTypeId
@@ -42,6 +45,9 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertUnitLength(LocalAxisA, nameof(TwistMotor), nameof(LocalAxisA));
+            ConstraintChecker.AssertUnitLength(LocalAxisB, nameof(TwistMotor), nameof(LocalAxisB));
+            ConstraintChecker.AssertValid(Settings, nameof(TwistMotor));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<TwistMotorPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Vector3Wide.WriteFirst(LocalAxisA, ref target.LocalAxisA);

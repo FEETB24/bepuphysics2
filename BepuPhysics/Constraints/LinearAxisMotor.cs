@@ -13,7 +13,13 @@ namespace BepuPhysics.Constraints
     /// </summary>
     public struct LinearAxisMotor : IConstraintDescription<LinearAxisMotor>
     {
+        /// <summary>
+        /// Local offset from the center of body A to its attachment point.
+        /// </summary>
         public Vector3 LocalOffsetA;
+        /// <summary>
+        /// Local offset from the center of body B to its attachment point.
+        /// </summary>
         public Vector3 LocalOffsetB;
         /// <summary>
         /// Direction of the motorized axis in the local space of body A.
@@ -23,6 +29,9 @@ namespace BepuPhysics.Constraints
         /// Target relative velocity along the world axis between A and B's anchor points.
         /// </summary>
         public float TargetVelocity;
+        /// <summary>
+        /// Motor control parameters.
+        /// </summary>
         public MotorSettings Settings;
 
         public int ConstraintTypeId
@@ -38,6 +47,8 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertUnitLength(LocalAxis, nameof(LinearAxisMotor), nameof(LocalAxis));
+            ConstraintChecker.AssertValid(Settings, nameof(LinearAxisMotor));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<LinearAxisMotorPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             Vector3Wide.WriteFirst(LocalOffsetA, ref target.LocalOffsetA);
@@ -77,14 +88,11 @@ namespace BepuPhysics.Constraints
             MotorSettingsWide.ComputeSoftness(prestep.Settings, dt, out var effectiveMassCFMScale, out projection.SoftnessImpulseScale, out projection.MaximumImpulse);
             var modifier = new LinearAxisServoFunctions.NoChangeModifier();
             LinearAxisServoFunctions.ComputeTransforms(ref modifier, bodies, ref bodyReferences, count, prestep.LocalOffsetA, prestep.LocalOffsetB, prestep.LocalPlaneNormal, inertiaA, inertiaB, effectiveMassCFMScale,
-                out var anchorA, out var anchorB, out var normal, out var effectiveMass,
+                out _, out _, out _, out var effectiveMass,
                 out projection.LinearVelocityToImpulseA, out projection.AngularVelocityToImpulseA, out projection.AngularVelocityToImpulseB,
                 out projection.LinearImpulseToVelocityA, out projection.AngularImpulseToVelocityA, out projection.NegatedLinearImpulseToVelocityB, out projection.AngularImpulseToVelocityB);
-
-            Vector3Wide.Subtract(anchorB, anchorA, out var anchorOffset);
-            Vector3Wide.Dot(anchorOffset, normal, out var planeNormalDot);
-            
-            projection.BiasImpulse = prestep.TargetVelocity * effectiveMass;
+                        
+            projection.BiasImpulse = -prestep.TargetVelocity * effectiveMass;
         }
                        
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -11,12 +11,21 @@ using Quaternion = BepuUtilities.Quaternion;
 namespace BepuPhysics.Constraints
 {
     /// <summary>
-    /// Description of a constraint which tries to reach a target orientation with a single body.
+    /// Constrains a single body to a target orientation.
     /// </summary>
     public struct OneBodyAngularServo : IConstraintDescription<OneBodyAngularServo>
     {
+        /// <summary>
+        /// Target orientation of the constraint.
+        /// </summary>
         public Quaternion TargetOrientation;
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
+        /// <summary>
+        /// Servo control parameters.
+        /// </summary>
         public ServoSettings ServoSettings;
 
         public int ConstraintTypeId
@@ -32,6 +41,8 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertUnitLength(TargetOrientation, nameof(OneBodyAngularServo), nameof(TargetOrientation));
+            ConstraintChecker.AssertValid(ServoSettings, SpringSettings, nameof(OneBodyAngularServo));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<OneBodyAngularServoPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             QuaternionWide.WriteFirst(TargetOrientation, ref target.TargetOrientation);
@@ -64,7 +75,7 @@ namespace BepuPhysics.Constraints
         public Vector<float> MaximumImpulse;
         public Symmetric3x3Wide ImpulseToVelocity;
     }
-    
+
     public struct OneBodyAngularServoFunctions : IOneBodyConstraintFunctions<OneBodyAngularServoPrestepData, OneBodyAngularServoProjection, Vector3Wide>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -75,7 +86,7 @@ namespace BepuPhysics.Constraints
             projection.ImpulseToVelocity = inertiaA.InverseInertiaTensor;
 
             //Jacobians are just the identity matrix.
-            
+
             QuaternionWide.Conjugate(orientationA, out var inverseOrientation);
             QuaternionWide.ConcatenateWithoutOverlap(inverseOrientation, prestep.TargetOrientation, out var errorRotation);
 
@@ -84,7 +95,7 @@ namespace BepuPhysics.Constraints
             SpringSettingsWide.ComputeSpringiness(prestep.SpringSettings, dt, out var positionErrorToVelocity, out var effectiveMassCFMScale, out projection.SoftnessImpulseScale);
             Symmetric3x3Wide.Invert(inertiaA.InverseInertiaTensor, out projection.VelocityToImpulse);
             Symmetric3x3Wide.Scale(projection.VelocityToImpulse, effectiveMassCFMScale, out projection.VelocityToImpulse);
-            
+
             ServoSettingsWide.ComputeClampedBiasVelocity(errorAxis, errorLength, positionErrorToVelocity, prestep.ServoSettings, dt, inverseDt, out var clampedBiasVelocity, out projection.MaximumImpulse);
             Symmetric3x3Wide.TransformWithoutOverlap(clampedBiasVelocity, projection.VelocityToImpulse, out projection.BiasImpulse);
         }
@@ -114,7 +125,7 @@ namespace BepuPhysics.Constraints
             Vector3Wide.Subtract(biasImpulse, softnessComponent, out var csi);
             Vector3Wide.Subtract(csi, csiVelocityComponent, out csi);
 
-            ServoSettingsWide.ClampImpulse(maximumImpulse, ref accumulatedImpulse, ref csi);            
+            ServoSettingsWide.ClampImpulse(maximumImpulse, ref accumulatedImpulse, ref csi);
 
             ApplyImpulse(ref velocityA.Angular, impulseToVelocityA, csi);
         }

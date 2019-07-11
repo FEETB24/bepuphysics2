@@ -274,7 +274,7 @@ namespace Demos.SpecializedTests
                     LocalOffsetA = new Vector3(0, 0.5f, 0),
                     LocalOffsetB = new Vector3(0, -0.5f, 0),
                     LocalAxis = new Vector3(0, 1, 0),
-                    TargetVelocity = 2,
+                    TargetVelocity = -2,
                     Settings = new MotorSettings(15, 0.01f)
                 });
             }
@@ -362,8 +362,6 @@ namespace Demos.SpecializedTests
             }
 
             Simulation.Statics.Add(new StaticDescription(new Vector3(), new CollidableDescription(Simulation.Shapes.Add(new Box(256, 1, 256)), 0.1f)));
-
-
         }        
     }
 }

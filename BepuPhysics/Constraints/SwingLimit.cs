@@ -8,14 +8,26 @@ using System.Runtime.CompilerServices;
 using static BepuUtilities.GatherScatter;
 namespace BepuPhysics.Constraints
 {
+    /// <summary>
+    /// Restricts axes attached to two bodies to fall within a maximum swing angle.
+    /// </summary>
     public struct SwingLimit : IConstraintDescription<SwingLimit>
     {
+        /// <summary>
+        /// Axis attached to body A in its local space.
+        /// </summary>
         public Vector3 AxisLocalA;
+        /// <summary>
+        /// Axis attached to body B in its local space.
+        /// </summary>
         public Vector3 AxisLocalB;
         /// <summary>
         /// Minimum dot product between the world space A and B axes that the constraint attempts to maintain.
         /// </summary>
         public float MinimumDot;
+        /// <summary>
+        /// Spring frequency and damping parameters.
+        /// </summary>
         public SpringSettings SpringSettings;
 
         /// <summary>
@@ -36,6 +48,10 @@ namespace BepuPhysics.Constraints
 
         public void ApplyDescription(ref TypeBatch batch, int bundleIndex, int innerIndex)
         {
+            ConstraintChecker.AssertUnitLength(AxisLocalA, nameof(SwingLimit), nameof(AxisLocalA));
+            ConstraintChecker.AssertUnitLength(AxisLocalB, nameof(SwingLimit), nameof(AxisLocalB));
+            Debug.Assert(MinimumDot >= -1f && MinimumDot <= 1f, "SwingLimit.MinimumDot must be from -1 to 1 inclusive.");
+            ConstraintChecker.AssertValid(SpringSettings, nameof(SwingLimit));
             Debug.Assert(ConstraintTypeId == batch.TypeId, "The type batch passed to the description must match the description's expected type.");
             ref var target = ref GetOffsetInstance(ref Buffer<SwingLimitPrestepData>.Get(ref batch.PrestepData, bundleIndex), innerIndex);
             GetFirst(ref target.AxisLocalA.X) = AxisLocalA.X;
