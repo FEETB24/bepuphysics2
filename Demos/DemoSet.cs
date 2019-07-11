@@ -40,6 +40,7 @@ namespace Demos
 
         public DemoSet()
         {
+            AddOption<BigConveyorDemo>();
             AddOption<CraneDemo>();
             AddOption<MagicDemo>();
             AddOption<DropCircleTest>();

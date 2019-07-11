@@ -19,7 +19,10 @@ namespace Demos.Demos
 
         private bool _baseUp = true;
 
-        private int _jointIndex;
+        private int _jointIndex = -1;
+        private int _linearMotorIndex = -1;
+        private int _angularHingeIndex = -1;
+
 
         private float _jointDistance = 5;
 
@@ -42,7 +45,7 @@ namespace Demos.Demos
             var baseShape = new Box(5, 1, 5);
 
 
-            boxShape.ComputeInertia(2, out var boxInertia);
+            boxShape.ComputeInertia(1000, out var boxInertia);
 
             var boxShapeIndex = Simulation.Shapes.Add(boxShape);
             var baseShapeIndex = Simulation.Shapes.Add(baseShape);
@@ -83,15 +86,18 @@ namespace Demos.Demos
             _baseReference = new BodyReference(baseIndex, Simulation.Bodies);
 
 
-            var distanceJoint = new DistanceLimit(Vector3.Zero, new Vector3(0,.51f,0), 5f, 5f, new SpringSettings(5, 1));
-            _jointIndex = Simulation.Solver.Add(baseIndex, boxIndex, distanceJoint);
 
-            var angularSwivelHinge = new AngularHinge() { LocalHingeAxisA = Vector3.UnitY, LocalHingeAxisB = Vector3.UnitY, SpringSettings = new SpringSettings(20f, 1f) };
-            Simulation.Solver.Add(baseIndex, boxIndex, angularSwivelHinge);
 
-            _poseIntegrator.CustomAngularDamping(boxIndex, .5f, BufferPool);
-            _poseIntegrator.CustomLinearDamping(boxIndex, .5f, BufferPool);
 
+        }
+
+        private void RemoveContrait(ref int index)
+        {
+            if (index != -1)
+            {
+                Simulation.Solver.Remove(index);
+                index = -1;
+            }
 
         }
 
@@ -116,6 +122,39 @@ namespace Demos.Demos
                 _jointDistance--;
                 ChangeLenght(_jointDistance);
 
+            }
+
+
+            if (input.WasPushed(OpenTK.Input.Key.C))
+            {
+                if (_jointIndex == -1)
+                {
+                    var baseIndex = _baseReference.Handle;
+                    var boxIndex = _boxReference.Handle;
+
+
+
+                    var distanceJoint = new DistanceLimit(Vector3.Zero, new Vector3(0, .51f, 0), 5f, 5f, new SpringSettings(5, 1));
+                    _jointIndex = Simulation.Solver.Add(baseIndex, boxIndex, distanceJoint);
+
+                    var angularSwivelHinge = new AngularHinge() { LocalHingeAxisA = Vector3.UnitY, LocalHingeAxisB = Vector3.UnitY, SpringSettings = new SpringSettings(20f, .0001f) };
+                    _angularHingeIndex =  Simulation.Solver.Add(baseIndex, boxIndex, angularSwivelHinge);
+
+
+                    var linearMotor = new OneBodyLinearMotor() { TargetVelocity = new Vector3(0, 0, 0), Settings = new MotorSettings(20, 1f) };
+                    _linearMotorIndex = Simulation.Solver.Add(boxIndex, linearMotor);
+
+                    _poseIntegrator.CustomAngularDamping(boxIndex, .5f, BufferPool);
+                    _poseIntegrator.CustomLinearDamping(boxIndex, .5f, BufferPool);
+                }
+            }
+
+
+            if (input.WasPushed(OpenTK.Input.Key.V))
+            {
+                RemoveContrait(ref _jointIndex);
+                RemoveContrait(ref _linearMotorIndex);
+                RemoveContrait(ref _angularHingeIndex);
             }
 
 

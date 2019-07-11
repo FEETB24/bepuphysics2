@@ -41,6 +41,7 @@ namespace Demos.Port
             int count = simulation.Bodies.ActiveSet.Count;
             ref var baseConveyorSettings = ref simulation.Bodies.ActiveSet.ConveyorSettings[0];
             ref var baseVelocities = ref simulation.Bodies.ActiveSet.Velocities[0];
+            ref var basePose = ref simulation.Bodies.ActiveSet.Poses[0];
 
             for (int i = 0; i < count; i++)
             {
@@ -48,7 +49,14 @@ namespace Demos.Port
                 ref var velocity = ref Unsafe.Add(ref baseVelocities, i);
                 if (conveyorSettings.IsLinearConveyor)
                 {
-                    velocity.Linear = conveyorSettings.LinearVelocity + conveyorSettings.ConveyorVelocity;
+                    ref var pose = ref Unsafe.Add(ref basePose, i);
+                    Quaternion.Transform(conveyorSettings.ConveyorVelocity, pose.Orientation, out var globalVelocity);
+                    velocity.Linear = conveyorSettings.LinearVelocity + globalVelocity;
+                }
+
+                if (conveyorSettings.IsAngularConveyor)
+                {
+                    velocity.Angular = conveyorSettings.AngularVelocity + conveyorSettings.ConveyorAngularVelocity;
                 }
             }
             
@@ -65,6 +73,10 @@ namespace Demos.Port
                 if (conveyorSettings.IsLinearConveyor)
                 {
                     velocity.Linear = conveyorSettings.LinearVelocity;
+                }
+                if (conveyorSettings.IsLinearConveyor)
+                {
+                    velocity.Angular = conveyorSettings.AngularVelocity;
                 }
             }
 

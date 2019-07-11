@@ -24,7 +24,6 @@ namespace Demos.Demos
             camera.Pitch = 0;
 
             Simulation = Simulation.Create(BufferPool, new DefaultNarrowPhaseCallbacks(), new DefaultPoseIntegratorCallbacks(BufferPool));
-
             var boxShape = new Box(1, 1, 1);
             var baseShape = new Box(10, 1, 10);
 
