@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using System.Runtime.CompilerServices;
+using BepuPhysics;
 using BepuPhysics.Collidables;
 using BepuPhysics.CollisionDetection;
 using BepuPhysics.Trees;
@@ -16,12 +17,17 @@ namespace Demos.Port.CollisionGroups
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool AllowTest(CollidableReference collidable)
         {
-            //check the filter
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OnRayHit(in RayData ray, ref float maximumT, float t, in Vector3 normal, CollidableReference collidable)
+        public bool AllowTest(CollidableReference collidable, int childIndex)
+        {
+            return true;
+        }
+
+        public void OnRayHit(in RayData ray, ref float maximumT, float t, in Vector3 normal, CollidableReference collidable,
+            int childIndex)
         {
             //We are only interested in the earliest hit. This callback is executing within the traversal, so modifying maximumT informs the traversal
             //that it can skip any AABBs which are more distant than the new maximumT.

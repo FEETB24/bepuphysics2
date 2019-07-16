@@ -19,7 +19,7 @@ namespace BepuPhysics
         public Vector3 Gravity;
         public float LinearDamping;
         public float AngularDamping;
-        Vector3 gravityDt ;
+        Vector3 gravityDt;
         float linearDampingDt;
         float angularDampingDt;
         private float _dt;
@@ -68,9 +68,9 @@ namespace BepuPhysics
 
         public AngularIntegrationMode AngularIntegrationMode => AngularIntegrationMode.Nonconserving;
 
-        public DefaultPoseIntegratorCallbacks(IUnmanagedMemoryPool pool) :this()
+        public DefaultPoseIntegratorCallbacks(IUnmanagedMemoryPool pool) : this()
         {
-            Gravity = new Vector3(0,-9.81f,0);
+            Gravity = new Vector3(0, -9.81f, 0);
             LinearDamping = 0.03f;
             AngularDamping = 0.03f;
             _angularDampingDictionary = new QuickDictionary<int, float, IntComparer>(1, pool);
@@ -105,7 +105,7 @@ namespace BepuPhysics
                 ref var handle = ref Simulation.Bodies.ActiveSet.IndexToHandle[0];
                 ref var index = ref Unsafe.Add(ref handle, bodyIndex);
 
-                if (_linearDampingDictionary.TryGetValue(index, out var linearDamping))
+                if (_linearDampingDictionary.Count > 0 && _linearDampingDictionary.TryGetValue(index, out var linearDamping))
                 {
                     linearDamping = (float)Math.Pow(MathHelper.Clamp(1 - linearDamping, 0, 1), _dt);
                     velocity.Linear = (velocity.Linear + gravityDt) * linearDamping;
@@ -115,14 +115,14 @@ namespace BepuPhysics
                     velocity.Linear = (velocity.Linear + gravityDt) * linearDampingDt;
                 }
 
-                if (_angularDampingDictionary.TryGetValue(index, out var angularDamping))
+                if (_angularDampingDictionary.Count > 0 && _angularDampingDictionary.TryGetValue(index, out var angularDamping))
                 {
                     angularDamping = (float)Math.Pow(MathHelper.Clamp(1 - angularDamping, 0, 1), _dt);
                     velocity.Angular = velocity.Angular * angularDamping;
                 }
                 else
                 {
-                    
+
                     velocity.Angular = velocity.Angular * angularDampingDt;
                 }
             }

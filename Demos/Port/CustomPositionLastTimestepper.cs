@@ -74,7 +74,7 @@ namespace Demos.Port
                 {
                     velocity.Linear = conveyorSettings.LinearVelocity;
                 }
-                if (conveyorSettings.IsLinearConveyor)
+                if (conveyorSettings.IsAngularConveyor)
                 {
                     velocity.Angular = conveyorSettings.AngularVelocity;
                 }

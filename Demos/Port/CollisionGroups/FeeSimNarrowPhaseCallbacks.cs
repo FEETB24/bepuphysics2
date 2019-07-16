@@ -59,8 +59,8 @@ namespace Demos.Port.CollisionGroups
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         unsafe void CreateMaterial(out PairMaterialProperties pairMaterial)
         {
-            pairMaterial.FrictionCoefficient = 1.5f;
-            pairMaterial.MaximumRecoveryVelocity = 2f;
+            pairMaterial.FrictionCoefficient = 2f;
+            pairMaterial.MaximumRecoveryVelocity = 3f;
             pairMaterial.SpringSettings = new SpringSettings(30, 1);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
