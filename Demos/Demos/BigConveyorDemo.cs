@@ -29,8 +29,8 @@ namespace Demos.Demos
         private QuickList<Movable> _movingObjects;
 
         private const float _conveyorHalfWidth = 1.5f;
-        private const float _horizontalHalfLenght = 20f;
-        private const float _verticalHalfLenght = 10f;
+        private const float _horizontalHalfLenght = 20;
+        private const float _verticalHalfLenght = 5;
 
         private const float _rampDegrees = 10f;
         private const float _floorHeight = 3f;
@@ -91,7 +91,7 @@ namespace Demos.Demos
             {
                
 
-                var position = new Vector3(0, _floorHeight * i, _verticalHalfLenght * i);
+                var position = new Vector3(0, _floorHeight * i,0/* _verticalHalfLenght * i*/);
 
                 for (int j = 0; j < _numberOfLoops; j++)
                 {
@@ -140,18 +140,18 @@ namespace Demos.Demos
         private void CreateLoop(ref Vector3 position)
         {
 
-            var movingPosition = position +new Vector3(0,1.5f, -2f);
+            //var movingPosition = position +new Vector3(0,1.5f, -2f);
 
-            var movingBodyIndex =  Instantiate(_movingObject,ref movingPosition, ref _orientations[0]);
-            var movable = new Movable()
-            {
-                BodyIndex = movingBodyIndex,
-                IsMoving = false,
-                IsMovingToOffset = true,
-                StartPosition = movingPosition,
-                ToggleSleepTimer = 0,
-            };
-            _movingObjects.Add(movable, BufferPool);
+            //var movingBodyIndex =  Instantiate(_movingObject,ref movingPosition, ref _orientations[0]);
+            //var movable = new Movable()
+            //{
+            //    BodyIndex = movingBodyIndex,
+            //    IsMoving = false,
+            //    IsMovingToOffset = true,
+            //    StartPosition = movingPosition,
+            //    ToggleSleepTimer = 0,
+            //};
+            //_movingObjects.Add(movable, BufferPool);
 
 
             CreateHorizontalConveyor(ref position, ref _orientations[0]);
