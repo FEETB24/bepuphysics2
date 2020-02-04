@@ -9,7 +9,7 @@ using DemoRenderer;
 using Demos.Port;
 using DemoUtilities;
 using OpenTK.Input;
-using Quaternion = BepuUtilities.Quaternion;
+using Quaternion = System.Numerics.Quaternion;
 
 namespace Demos.Demos
 {
@@ -40,7 +40,7 @@ namespace Demos.Demos
         private const int _numberOfLevels = 10;
 
         private const float SleepTime = 5;
-        private Vector3 MovingOffset = new Vector3(0,0, _verticalHalfLenght * 4);
+        private Vector3 MovingOffset = new Vector3(0, 0, _verticalHalfLenght * 4);
 
 
         private struct Movable
@@ -57,15 +57,15 @@ namespace Demos.Demos
         {
 
             _orientations[0] = Quaternion.Identity;
-            Quaternion.CreateFromYawPitchRoll(-(float)Math.PI * 0.5f, 0, 0, out _orientations[1]);
-            Quaternion.CreateFromYawPitchRoll(-(float)Math.PI * 1.0f, 0, 0, out _orientations[2]);
-            Quaternion.CreateFromYawPitchRoll(-(float)Math.PI * 1.5f, 0, 0, out _orientations[3]);
+            _orientations[1] = Quaternion.CreateFromYawPitchRoll(-(float)Math.PI * 0.5f, 0, 0);
+            _orientations[2] = Quaternion.CreateFromYawPitchRoll(-(float)Math.PI * 1.0f, 0, 0);
+            _orientations[3] = Quaternion.CreateFromYawPitchRoll(-(float)Math.PI * 1.5f, 0, 0);
 
             camera.Position = new Vector3(-30, 8, -60);
             camera.Yaw = MathHelper.Pi * 3f / 4;
             camera.Pitch = 0;
 
-            Simulation = Simulation.Create(BufferPool, new DemoNarrowPhaseCallbacks(), new DemoPoseIntegratorCallbacks(new Vector3(0f,-9.81f,0f))
+            Simulation = Simulation.Create(BufferPool, new DemoNarrowPhaseCallbacks(), new DemoPoseIntegratorCallbacks(new Vector3(0f, -9.81f, 0f))
                , new CustomPositionLastTimestepper()
                 );
 
@@ -85,20 +85,20 @@ namespace Demos.Demos
             _rampConveyorDescription = CreateConveyorDescription(rampLenght);
             _rampConveyorDescription.Pose.Orientation = Quaternion.CreateFromYawPitchRoll((float)Math.PI * 0.5f, 0, angle);
             _rampConveyorDescription.ConveyorSettings.ConveyorVelocity *= 2f;
-            
-          
+
+
             for (int i = 0; i < _numberOfLevels; i++)
             {
-               
 
-                var position = new Vector3(0, _floorHeight * i,0/* _verticalHalfLenght * i*/);
+
+                var position = new Vector3(0, _floorHeight * i, 0/* _verticalHalfLenght * i*/);
 
                 for (int j = 0; j < _numberOfLoops; j++)
                 {
                     CreateLoop(ref position);
                 }
 
-               // if (i < _numberOfLevels - 1)
+                // if (i < _numberOfLevels - 1)
                 {
                     CreateRamp(ref position);
                 }
@@ -109,14 +109,14 @@ namespace Demos.Demos
 
         private BodyDescription CreateConveyorDescription(float halfLenght)
         {
-            var description =  CreateBoxDescription(halfLenght * 2, 1f, _conveyorHalfWidth * 2);
+            var description = CreateBoxDescription(halfLenght * 2, 1f, _conveyorHalfWidth * 2);
             description.ConveyorSettings.IsLinearConveyor = true;
             description.ConveyorSettings.ConveyorVelocity = new Vector3(ConveyorSpeed, 0, 0);
             description.LocalInertia = new BodyInertia();
             description.Activity.SleepThreshold = -1;
             return description;
         }
-        private BodyDescription CreateBoxDescription(float width, float height, float lenght )
+        private BodyDescription CreateBoxDescription(float width, float height, float lenght)
         {
             var boxShape = new Box(width, height, lenght);
             var boxShapeIndex = Simulation.Shapes.Add(boxShape);
@@ -177,10 +177,10 @@ namespace Demos.Demos
             position.X -= _verticalHalfLenght + _conveyorHalfWidth;
 
             CreateVerticalConveyor(ref position, ref _orientations[3]);
-            
+
             var angle = _rampDegrees * (float)(Math.PI / 180f);
-            var rampX = _floorHeight / (float) Math.Tan(angle);
-            position.Z -= _verticalHalfLenght + (rampX );
+            var rampX = _floorHeight / (float)Math.Tan(angle);
+            position.Z -= _verticalHalfLenght + (rampX);
             position.Y += _floorHeight * 0.5f;
             Instantiate(_rampConveyorDescription, ref position, ref _rampConveyorDescription.Pose.Orientation);
 
@@ -267,7 +267,7 @@ namespace Demos.Demos
             //Randomly destroy
             if (input.WasPushed(Key.C))
             {
-             
+
 
 
 
@@ -287,27 +287,27 @@ namespace Demos.Demos
             if (_spawnCount >= _spawnTime)
             {
                 _spawnCount -= _spawnTime;
-                var boxPosition = new Vector3(-_horizontalHalfLenght + 1 , 2, 0);
+                var boxPosition = new Vector3(-_horizontalHalfLenght + 1, 2, 0);
                 var identity = Quaternion.Identity;
                 Instantiate(_boxDescription, ref boxPosition, ref identity);
 
 
 
-                var deleteObject = random.Next(_createdObjects.Count-1);
+                var deleteObject = random.Next(_createdObjects.Count - 1);
                 var reference = new BodyReference(deleteObject, Simulation.Bodies);
                 if ((reference.LocalInertia.InverseMass > 0))
                 {
                     Simulation.Bodies.Remove(deleteObject);
                     _createdObjects.Remove(deleteObject);
                 }
-     
+
             }
 
 
             for (var i = 0; i < _movingObjects.Count; i++)
             {
                 ref var movingObject = ref _movingObjects[i];
-               
+
 
                 if (movingObject.IsMoving)
                 {

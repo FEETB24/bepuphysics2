@@ -13,7 +13,7 @@ namespace Demos.Port.EventHandler
         public QuickList<CollidablePair> Pairs;
 
         public void OnContactAdded<TManifold>(CollidableReference eventSource, CollidablePair pair, ref TManifold contactManifold,
-            in Vector3 contactOffset, in Vector3 contactNormal, float depth, int featureId, int contactIndex, int workerIndex) where TManifold : IContactManifold
+            in Vector3 contactOffset, in Vector3 contactNormal, float depth, int featureId, int contactIndex, int workerIndex) where TManifold : struct, IContactManifold<TManifold>
         {
             //var other = pair.A.Packed == eventSource.Packed ? pair.B : pair.A;
             //Console.WriteLine($"Added contact: ({eventSource}, {other}): {featureId}");

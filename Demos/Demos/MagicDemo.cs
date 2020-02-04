@@ -6,7 +6,7 @@ using BepuUtilities;
 using DemoContentLoader;
 using DemoRenderer;
 using DemoUtilities;
-using Quaternion = BepuUtilities.Quaternion;
+using Quaternion = System.Numerics.Quaternion;
 
 namespace Demos.Demos
 {
@@ -24,6 +24,7 @@ namespace Demos.Demos
             camera.Pitch = 0;
 
             Simulation = Simulation.Create(BufferPool, new DefaultNarrowPhaseCallbacks(), new DefaultPoseIntegratorCallbacks(BufferPool));
+            DefaultPoseIntegratorCallbacks.Simulation = Simulation;
             var boxShape = new Box(1, 1, 1);
             var baseShape = new Box(10, 1, 10);
 

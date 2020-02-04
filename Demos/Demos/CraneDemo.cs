@@ -8,7 +8,7 @@ using BepuUtilities;
 using DemoContentLoader;
 using DemoRenderer;
 using DemoUtilities;
-using Quaternion = BepuUtilities.Quaternion;
+using Quaternion = System.Numerics.Quaternion;
 
 namespace Demos.Demos
 {

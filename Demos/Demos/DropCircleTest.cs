@@ -13,7 +13,7 @@ using Demos.Port.CollisionGroups;
 using Demos.Port.EventHandler;
 using DemoUtilities;
 using OpenTK.Input;
-using Quaternion = BepuUtilities.Quaternion;
+using Quaternion = System.Numerics.Quaternion;
 
 namespace Demos.Demos
 {
@@ -53,6 +53,8 @@ namespace Demos.Demos
                 };
             Simulation = Simulation.Create(BufferPool, _collisionGroups,
                 new DefaultPoseIntegratorCallbacks(BufferPool), timestepper: new CustomPositionLastTimestepper());
+            
+            DefaultPoseIntegratorCallbacks.Simulation = Simulation;
             var boxShape = new Box(1, 1, 1);
             boxShape.ComputeInertia(1, out _boxInertia);
             _boxIndex = Simulation.Shapes.Add(boxShape);

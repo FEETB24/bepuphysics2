@@ -85,7 +85,7 @@ namespace Demos.Port.EventHandler
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void UpdatePreviousCollision<TManifold>(ref PreviousCollisionData collision, ref TManifold manifold) where TManifold : IContactManifold
+        void UpdatePreviousCollision<TManifold>(ref PreviousCollisionData collision, ref TManifold manifold) where TManifold : struct, IContactManifold<TManifold>
         {
             Debug.Assert(manifold.Count <= 4, "This demo was built on the assumption that nonconvex manifolds will have a maximum of four contacts, but that might have changed.");
             //If the above assert gets hit because of a change to nonconvex manifold capacities, the packed feature id representation this uses will need to be updated.
@@ -98,7 +98,7 @@ namespace Demos.Port.EventHandler
             collision.Fresh = true;
         }
 
-        void HandleManifoldForCollidable<TManifold>(int workerIndex, CollidableReference source, CollidableReference other, CollidablePair pair, ref TManifold manifold) where TManifold : IContactManifold
+        void HandleManifoldForCollidable<TManifold>(int workerIndex, CollidableReference source, CollidableReference other, CollidablePair pair, ref TManifold manifold) where TManifold : struct, IContactManifold<TManifold>
         {
             if (listeners.GetTableIndices(ref source, out var tableIndex, out var listenerIndex))
             {

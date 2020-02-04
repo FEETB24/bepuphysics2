@@ -28,31 +28,24 @@ namespace Demos.Port.CollisionGroups
             }
             return true;
         }
+        
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold,
+            out PairMaterialProperties pairMaterial) where TManifold : struct, IContactManifold<TManifold>
+        {
+            CreateMaterial(out pairMaterial);
+            return CollisionGroup.AllowCollision(CollisionGroups[pair.A.Handle].Filter, CollisionGroups[pair.B.Handle].Filter);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB)
         {
             return CollisionGroup.AllowDetection(CollisionGroups[childIndexA].Filter, CollisionGroups[childIndexB].Filter);
         }
-
+        
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, ConvexContactManifold* manifold,
-            out PairMaterialProperties pairMaterial)
-        {
-            CreateMaterial(out pairMaterial);
-            return CollisionGroup.AllowCollision(CollisionGroups[pair.A.Handle].Filter, CollisionGroups[pair.B.Handle].Filter);
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, NonconvexContactManifold* manifold,
-            out PairMaterialProperties pairMaterial)
-        {
-            CreateMaterial(out pairMaterial);
-            return CollisionGroup.AllowCollision(CollisionGroups[pair.A.Handle].Filter, CollisionGroups[pair.B.Handle].Filter);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB,
-            ConvexContactManifold* manifold)
+        public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref
+            ConvexContactManifold manifold)
         {
             return CollisionGroup.AllowCollision(CollisionGroups[pair.A.Handle].Filter, CollisionGroups[pair.B.Handle].Filter);
         }

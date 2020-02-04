@@ -26,6 +26,7 @@ namespace Demos.Demos
             camera.Pitch = 0;
 
             Simulation = Simulation.Create(BufferPool, new DefaultNarrowPhaseCallbacks(), new DefaultPoseIntegratorCallbacks(BufferPool));
+            DefaultPoseIntegratorCallbacks.Simulation = Simulation;
 
             var boxShape = new Box(1, 1, 1);
             boxShape.ComputeInertia(1, out var boxInertia);

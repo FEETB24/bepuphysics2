@@ -50,7 +50,7 @@ namespace Demos.Port
                 if (conveyorSettings.IsLinearConveyor)
                 {
                     ref var pose = ref Unsafe.Add(ref basePose, i);
-                    Quaternion.Transform(conveyorSettings.ConveyorVelocity, pose.Orientation, out var globalVelocity);
+                    var globalVelocity = System.Numerics.Vector3.Transform(conveyorSettings.ConveyorVelocity, pose.Orientation);
                     velocity.Linear = conveyorSettings.LinearVelocity + globalVelocity;
                 }
 
