@@ -7,7 +7,6 @@ using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using Quaternion = BepuUtilities.Quaternion;
 namespace BepuPhysics.Collidables
 {
     public unsafe struct ShapeTreeOverlapEnumerator<TSubpairOverlaps> : IBreakableForEach<int> where TSubpairOverlaps : ICollisionTaskSubpairOverlaps
@@ -121,7 +120,7 @@ namespace BepuPhysics.Collidables
             Vector3Wide.WriteFirst(source.C * scale, ref target.C);
         }
 
-        public void ComputeBounds(in BepuUtilities.Quaternion orientation, out Vector3 min, out Vector3 max)
+        public void ComputeBounds(in Quaternion orientation, out Vector3 min, out Vector3 max)
         {
             Matrix3x3.CreateFromQuaternion(orientation, out var r);
             min = new Vector3(float.MaxValue);
@@ -184,7 +183,7 @@ namespace BepuPhysics.Collidables
         public unsafe void RayTest<TRayHitHandler>(in RigidPose pose, in RayData ray, ref float maximumT, ref TRayHitHandler hitHandler) where TRayHitHandler : struct, IShapeRayHitHandler
         {
             HitLeafTester<TRayHitHandler> leafTester;
-            leafTester.Triangles = (Triangle*)Triangles.Memory;
+            leafTester.Triangles = Triangles.Memory;
             leafTester.HitHandler = hitHandler;
             Matrix3x3.CreateFromQuaternion(pose.Orientation, out leafTester.Orientation);
             leafTester.InverseScale = inverseScale;
@@ -208,7 +207,7 @@ namespace BepuPhysics.Collidables
         public unsafe void RayTest<TRayHitHandler>(in RigidPose pose, ref RaySource rays, ref TRayHitHandler hitHandler) where TRayHitHandler : struct, IShapeRayHitHandler
         {
             HitLeafTester<TRayHitHandler> leafTester;
-            leafTester.Triangles = (Triangle*)Triangles.Memory;
+            leafTester.Triangles = Triangles.Memory;
             leafTester.HitHandler = hitHandler;
             Matrix3x3.CreateFromQuaternion(pose.Orientation, out leafTester.Orientation);
             Matrix3x3.Transpose(leafTester.Orientation, out var inverseOrientation);
@@ -243,7 +242,8 @@ namespace BepuPhysics.Collidables
                 var scaledMin = mesh.inverseScale * pair.Min;
                 var scaledMax = mesh.inverseScale * pair.Max;
                 enumerator.Overlaps = Unsafe.AsPointer(ref overlaps.GetOverlapsForPair(i));
-                mesh.Tree.GetOverlaps(scaledMin, scaledMax, ref enumerator);
+                //Take a min/max to compensate for negative scales.
+                mesh.Tree.GetOverlaps(Vector3.Min(scaledMin, scaledMax), Vector3.Max(scaledMin, scaledMax), ref enumerator);
             }
         }
 
@@ -256,7 +256,8 @@ namespace BepuPhysics.Collidables
             ShapeTreeSweepLeafTester<TOverlaps> enumerator;
             enumerator.Pool = pool;
             enumerator.Overlaps = overlaps;
-            Tree.Sweep(scaledMin, scaledMax, scaledSweep, maximumT, ref enumerator);
+            //Take a min/max to compensate for negative scales.
+            Tree.Sweep(Vector3.Min(scaledMin, scaledMax), Vector3.Max(scaledMin, scaledMax), scaledSweep, maximumT, ref enumerator);
         }
 
         public struct MeshTriangleSource : ITriangleSource

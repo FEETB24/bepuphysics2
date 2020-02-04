@@ -1,19 +1,17 @@
-﻿using BepuPhysics.CollisionDetection;
-using BepuUtilities;
+﻿using BepuUtilities;
 using BepuUtilities.Memory;
 using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using static BepuUtilities.GatherScatter;
-using Quaternion = BepuUtilities.Quaternion;
 
 namespace BepuPhysics.Constraints
 {
     /// <summary>
     /// Constrains the angular velocity of one body to the target.
     /// </summary>
-    public struct OneBodyAngularMotor : IConstraintDescription<OneBodyAngularMotor>
+    public struct OneBodyAngularMotor : IOneBodyConstraintDescription<OneBodyAngularMotor>
     {
         /// <summary>
         /// Target angular velocity.

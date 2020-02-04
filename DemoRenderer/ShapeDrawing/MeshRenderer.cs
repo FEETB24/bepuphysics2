@@ -1,13 +1,11 @@
 ﻿using BepuUtilities;
 using BepuUtilities.Collections;
-using BepuUtilities.Memory;
 using DemoContentLoader;
 using SharpDX.Direct3D11;
 using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Quaternion = BepuUtilities.Quaternion;
 
 namespace DemoRenderer.ShapeDrawing
 {
@@ -110,7 +108,7 @@ namespace DemoRenderer.ShapeDrawing
                 {
                     var subbatchStart = Math.Max(0, batch.Count - this.instances.Capacity);
                     var subbatchCount = batch.Count - subbatchStart;
-                    this.instances.Update(context, new Span<MeshInstance>((MeshInstance*)batch.Span.Memory + subbatchStart, subbatchCount));
+                    this.instances.Update(context, new Span<MeshInstance>(batch.Span.Memory + subbatchStart, subbatchCount));
                     context.DrawInstanced(batchVertexCount, subbatchCount, 0, 0);
                     batch.Count -= subbatchCount;
                 }

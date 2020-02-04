@@ -6,14 +6,13 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using static BepuUtilities.GatherScatter;
-using Quaternion = BepuUtilities.Quaternion;
 
 namespace BepuPhysics.Constraints
 {
     /// <summary>
     /// Constrains two bodies to rotate around a local axis attached to the first body at a target velocity.
     /// </summary>
-    public struct AngularAxisMotor : IConstraintDescription<AngularAxisMotor>
+    public struct AngularAxisMotor : ITwoBodyConstraintDescription<AngularAxisMotor>
     {
         /// <summary>
         /// Axis of rotation in body A's local space.

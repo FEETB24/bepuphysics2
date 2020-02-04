@@ -204,7 +204,7 @@ namespace BepuPhysics.Collidables
                 bestDenominator = candidateDenominator;
                 bestIndex = 0;
             }
-            for (int i = 0; i < facePoints.Count; ++i)
+            for (int i = 1; i < facePoints.Count; ++i)
             {
                 startToCandidate = facePoints[i] - start;
                 dot = Vector2.Dot(startToCandidate, previousEdgeDirection);
@@ -214,7 +214,7 @@ namespace BepuPhysics.Collidables
                 //Watch out for collinear points. If the angle is the same, then pick the more distant point.
                 var candidate = candidateNumerator * bestDenominator;
                 var currentBest = bestNumerator * candidateDenominator;
-                var epsilon = 1e-7f * absCandidateNumerator * bestDenominator;
+                var epsilon = 1e-6 * absCandidateNumerator * bestDenominator;
                 if (candidate > currentBest - epsilon)
                 {
                     //Candidate and current best angle may be extremely similar.
@@ -617,7 +617,7 @@ namespace BepuPhysics.Collidables
                 reducedFaceIndices.Count = 0;
                 facePoints.Count = 0;
                 ReduceFace(ref rawFaceVertexIndices, faceNormal, ref points, ref facePoints, ref allowVertex, ref reducedFaceIndices);
-                if(reducedFaceIndices.Count < 3)
+                if (reducedFaceIndices.Count < 3)
                 {
                     //Degenerate face found; don't bother creating work for it.
                     continue;
@@ -870,7 +870,9 @@ namespace BepuPhysics.Collidables
         {
             ComputeHull(points, pool, out var hullData);
             CreateShape(points, hullData, pool, out center, out convexHull);
-            hullData.Dispose(pool);
+            //Empty input point sets won't allocate.
+            if (hullData.OriginalVertexMapping.Allocated)
+                hullData.Dispose(pool);
         }
     }
 }

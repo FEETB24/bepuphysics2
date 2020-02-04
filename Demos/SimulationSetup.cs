@@ -1,13 +1,9 @@
 ﻿using BepuUtilities.Memory;
 using BepuPhysics;
-using BepuPhysics.Collidables;
-using BepuPhysics.CollisionDetection;
 using BepuPhysics.Constraints;
-using Demos.SpecializedTests;
 using System.Collections.Generic;
 using System.Numerics;
-
-using Quaternion = BepuUtilities.Quaternion;
+using BepuUtilities;
 
 namespace Demos
 {
@@ -69,7 +65,7 @@ namespace Demos
             LocalBodyHandle = 0;
         }
 
-        public void Add<T>(ref T description, int otherBodyHandle) where T : IConstraintDescription<T>
+        public void Add<T>(ref T description, int otherBodyHandle) where T : ITwoBodyConstraintDescription<T>
         {
             var constraintHandle = simulation.Solver.Add(LocalBodyHandle, otherBodyHandle, ref description);
             ConstraintHandles.Add(constraintHandle);
@@ -82,7 +78,7 @@ namespace Demos
         {
             offsetB = b.Position - a.Position;
             y = Vector3.Normalize(-offsetB);
-            Quaternion.TransformUnitZ(a.Orientation, out var ax);
+            QuaternionEx.TransformUnitZ(a.Orientation, out var ax);
             x = Vector3.Cross(ax, y);
             var xLength = x.Length();
             if (xLength > 1e-7)
@@ -91,7 +87,7 @@ namespace Demos
             }
             else
             {
-                Quaternion.TransformUnitX(a.Orientation, out var az);
+                QuaternionEx.TransformUnitX(a.Orientation, out var az);
                 x = Vector3.Normalize(Vector3.Cross(az, y));
             }
             z = Vector3.Cross(x, y);

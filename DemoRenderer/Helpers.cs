@@ -6,7 +6,7 @@ using Buffer = SharpDX.Direct3D11.Buffer;
 using System.Runtime.CompilerServices;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using Quaternion = BepuUtilities.Quaternion;
+using BepuUtilities;
 
 namespace DemoRenderer
 {
@@ -22,7 +22,7 @@ namespace DemoRenderer
         {
             inputAssembler.SetIndexBuffer(binding.Buffer, binding.Format, offset);
         }
-        
+
         /// <summary>
         /// Updates a buffer using UpdateSubresource.
         /// </summary>
@@ -179,6 +179,33 @@ namespace DemoRenderer
         }
 
         /// <summary>
+        /// Packs an RGBA color in a UNORM manner such that bits 0 through 7 are R, bits 8 through 15 are G, and bits 16 through 23 are B, and 24 through 31 are A. 
+        /// </summary>
+        /// <param name="color">RGBA color to pack.</param>
+        /// <returns>Color packed into 32 bits.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint PackColor(in Vector4 color)
+        {
+            var scaledColor = Vector4.Max(Vector4.Zero, Vector4.Min(Vector4.One, color)) * 255;
+            return (uint)scaledColor.X | ((uint)scaledColor.Y << 8) | ((uint)scaledColor.Z << 16) | ((uint)scaledColor.W << 24);
+        }
+
+        /// <summary>
+        /// Unpacks a 4 component color packed by the Helpers.PackColor function.
+        /// </summary>
+        /// <param name="packedColor">Packed representation of the color to unpack.</param>
+        /// <param name="color">Unpacked color.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void UnpackColor(uint packedColor, out Vector4 color)
+        {
+            color = new Vector4(
+                (packedColor & 255) / 255f,
+                ((packedColor >> 8) & 255) / 255f,
+                ((packedColor >> 16) & 255) / 255f,
+                ((packedColor >> 24) & 255) / 255f);
+        }
+
+        /// <summary>
         /// Weakly packs an orientation into a 3 component vector by ensuring the W component is positive and then dropping it. Remaining components are kept in full precision.
         /// </summary>
         /// <param name="source">Orientation to pack.</param>
@@ -241,7 +268,46 @@ namespace DemoRenderer
             orientation.Y = UnpackDuplicateZeroSNORM(Unsafe.Add(ref packedShorts, 1));
             orientation.Z = UnpackDuplicateZeroSNORM(Unsafe.Add(ref packedShorts, 2));
             orientation.W = UnpackDuplicateZeroSNORM(Unsafe.Add(ref packedShorts, 3));
-            Quaternion.Normalize(ref orientation);
+            QuaternionEx.Normalize(ref orientation);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool GetScreenLocation(in Vector3 position, in Matrix viewProjection, in Vector2 resolution, out Vector2 screenLocation)
+        {
+            Matrix.Transform(new Vector4(position, 1), viewProjection, out var projected);
+            projected /= projected.W;
+            if (projected.Z <= 0 || MathF.Abs(projected.X) > 1 || MathF.Abs(projected.Y) > 1)
+            {
+                screenLocation = default;
+                return false;
+            }
+            var ndc = new Vector2(projected.X, projected.Y);
+            screenLocation = (ndc * new Vector2(0.5f, -0.5f) + new Vector2(0.5f)) * resolution;
+            return true;
+        }
+
+        /// <summary>
+        /// Applies the sRGB gamma curve to a scalar input.
+        /// </summary>
+        /// <param name="x">Value to apply the curve to.</param>
+        /// <returns>Transformed value.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float ToSRGB(float x)
+        {
+            return MathF.Max(0, MathF.Min(1, x <= 0.0031308f ?
+                12.92f * x :
+                1.055f * MathF.Pow(x, 1f / 2.4f) - 0.055f));
+        }
+
+        /// <summary>
+        /// Applies the sRGB gamma curve to a vector.
+        /// </summary>
+        /// <param name="linear">Linear input to apply the curve to.</param>
+        /// <param name="srgb">Transformed value.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void ToSRGB(in Vector3 linear, out Vector3 srgb)
+        {
+            srgb = new Vector3(ToSRGB(linear.X), ToSRGB(linear.Y), ToSRGB(linear.Z));
         }
 
         [Conditional("DEBUG")]

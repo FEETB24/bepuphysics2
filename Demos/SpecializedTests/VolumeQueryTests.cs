@@ -40,25 +40,14 @@ namespace Demos.SpecializedTests
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            void ConfigureMaterial(out PairMaterialProperties pairMaterial)
-            {
-                pairMaterial = new PairMaterialProperties();
-            }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, NonconvexContactManifold* manifold, out PairMaterialProperties pairMaterial)
-            {
-                pairMaterial = new PairMaterialProperties();
-                return false;
-            }
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, ConvexContactManifold* manifold, out PairMaterialProperties pairMaterial)
+            public unsafe bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial) where TManifold : struct, IContactManifold<TManifold>
             {
                 pairMaterial = new PairMaterialProperties();
                 return false;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ConvexContactManifold* manifold)
+            public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold)
             {
                 return false;
             }
@@ -98,12 +87,12 @@ namespace Demos.SpecializedTests
                         var r = new Vector3((float)random.NextDouble(), (float)random.NextDouble(), (float)random.NextDouble());
                         var location = spacing * (new Vector3(i, j, k) + new Vector3(-width, -height, -length) * 0.5f) + randomizationBase + r * randomizationSpan;
 
-                        BepuUtilities.Quaternion orientation;
+                        Quaternion orientation;
                         orientation.X = -1 + 2 * (float)random.NextDouble();
                         orientation.Y = -1 + 2 * (float)random.NextDouble();
                         orientation.Z = -1 + 2 * (float)random.NextDouble();
                         orientation.W = 0.01f + (float)random.NextDouble();
-                        orientation.Normalize();
+                        QuaternionEx.Normalize(ref orientation);
 
                         if ((i + j + k) % 2 == 1)
                         {
@@ -171,7 +160,7 @@ namespace Demos.SpecializedTests
 
         QuickList<BoundingBox> queryBoxes;
 
-                
+
         class BoxQueryAlgorithm
         {
             public string Name;
@@ -244,7 +233,7 @@ namespace Demos.SpecializedTests
         }
         Buffer<QueryJob> jobs;
 
-        
+
         unsafe struct HitHandler : IBreakableForEach<CollidableReference>
         {
             public int* IntersectionCount;
@@ -256,18 +245,18 @@ namespace Demos.SpecializedTests
                 return true;
             }
         }
-                
+
         bool shouldUseMultithreading = true;
 
         public unsafe override void Update(Window window, Camera camera, Input input, float dt)
         {
             base.Update(window, camera, input, dt);
-                        
+
             if (input.WasPushed(OpenTK.Input.Key.T))
             {
                 shouldUseMultithreading = !shouldUseMultithreading;
             }
-                      
+
             var raysPerJobBase = queryBoxes.Count / jobs.Length;
             var remainder = queryBoxes.Count - raysPerJobBase * jobs.Length;
             var previousJobEnd = 0;

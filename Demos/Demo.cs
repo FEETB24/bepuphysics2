@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Text;
 using DemoRenderer.UI;
 using DemoContentLoader;
+using Helpers = DemoRenderer.Helpers;
 
 namespace Demos
 {
@@ -35,7 +36,12 @@ namespace Demos
             ThreadDispatcher = new SimpleThreadDispatcher(Environment.ProcessorCount);
         }
 
+        public virtual void LoadGraphicalContent(ContentArchive content, RenderSurface surface)
+        {
+        }
+
         public abstract void Initialize(ContentArchive content, Camera camera);
+
 
         public virtual void Update(Window window, Camera camera, Input input, float dt)
         {

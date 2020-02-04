@@ -21,7 +21,7 @@ namespace BepuPhysics.CollisionDetection
         //However, the original user may have provided this pair in unknown order and triggered a flip. We'll compensate for that when examining contact positions.
         public bool RequiresFlip;
         //The triangles array is in the mesh's local space. In order to test any contacts against them, we need to be able to transform contacts.
-        public BepuUtilities.Quaternion MeshOrientation;
+        public Quaternion MeshOrientation;
         //This uses all of the nonconvex reduction's logic, so we just nest it.
         public NonconvexReduction Inner;
 
@@ -31,10 +31,10 @@ namespace BepuPhysics.CollisionDetection
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void OnChildCompleted<TCallbacks>(ref PairContinuation report, ConvexContactManifold* manifold, ref CollisionBatcher<TCallbacks> batcher)
+        public unsafe void OnChildCompleted<TCallbacks>(ref PairContinuation report, ref ConvexContactManifold manifold, ref CollisionBatcher<TCallbacks> batcher)
             where TCallbacks : struct, ICollisionCallbacks
         {
-            Inner.OnChildCompleted(ref report, manifold, ref batcher);
+            Inner.OnChildCompleted(ref report, ref manifold, ref batcher);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

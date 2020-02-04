@@ -1,17 +1,13 @@
 ﻿using BepuPhysics;
 using BepuPhysics.Collidables;
-using BepuPhysics.CollisionDetection;
 using BepuPhysics.Constraints;
 using BepuPhysics.Trees;
 using BepuUtilities;
 using DemoRenderer;
 using DemoRenderer.Constraints;
 using System;
-using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Text;
-using Quaternion = BepuUtilities.Quaternion;
 
 namespace Demos
 {
@@ -76,7 +72,8 @@ namespace Demos
 
         public void Update(Simulation simulation, Camera camera, bool mouseLocked, bool shouldGrab, in Quaternion rotation, in Vector2 normalizedMousePosition)
         {
-            var bodyExists = body.Exists;
+            //On the off chance some demo modifies the kinematic state, treat that as a grab terminator.
+            var bodyExists = body.Exists && !body.Kinematic;
             if (active && (!shouldGrab || !bodyExists))
             {
                 active = false;
@@ -113,12 +110,9 @@ namespace Demos
             }
             else if (active)
             {
-                Quaternion.TransformWithoutOverlap(localGrabPoint, body.Pose.Orientation, out var grabPointOffset);
-                var grabbedPoint = grabPointOffset + body.Pose.Position;
-
                 var rayDirection = camera.GetRayDirection(mouseLocked, normalizedMousePosition);
                 var targetPoint = camera.Position + rayDirection * t;
-                targetOrientation = Quaternion.Concatenate(targetOrientation, rotation);
+                targetOrientation = QuaternionEx.Normalize(QuaternionEx.Concatenate(targetOrientation, rotation));
 
                 CreateMotorDescription(targetPoint, body.LocalInertia.InverseMass, out var linearDescription, out var angularDescription);
                 simulation.Solver.ApplyDescription(linearMotorHandle, ref linearDescription);

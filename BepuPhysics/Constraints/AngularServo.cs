@@ -1,19 +1,17 @@
-﻿using BepuPhysics.CollisionDetection;
-using BepuUtilities;
+﻿using BepuUtilities;
 using BepuUtilities.Memory;
 using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using static BepuUtilities.GatherScatter;
-using Quaternion = BepuUtilities.Quaternion;
 
 namespace BepuPhysics.Constraints
 {
     /// <summary>
     /// Constrains two bodies to have a target relative rotation.
     /// </summary>
-    public struct AngularServo : IConstraintDescription<AngularServo>
+    public struct AngularServo : ITwoBodyConstraintDescription<AngularServo>
     {
         /// <summary>
         /// The target relative rotation from body A to body B in body A's local space. The constraint tries to maintain OrientationB = TargetRelativeRotationLocalA * OrientationA.

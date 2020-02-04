@@ -9,6 +9,7 @@ using BepuPhysics.Constraints;
 using System.Diagnostics;
 using System.Threading;
 using BepuUtilities;
+using BepuPhysics.Constraints.Contact;
 
 namespace BepuPhysics.CollisionDetection
 {
@@ -25,26 +26,17 @@ namespace BepuPhysics.CollisionDetection
      * 
      * This deferred execution requires that the pending work be stored somehow. This is complicated by the fact that there are a variety of different top level pairs that handle
      * incoming contact manifold data and the resulting constraints in different ways. There are two main distinctions:
-     * 1) Continuous collision detection mode. For the purposes of the narrow phase, each collidable can be thought of as discrete, inner sphere, substepping, or inner sphere + substepping.
+     * 1) Continuous collision detection mode. For the purposes of the narrow phase, each collidable can be thought of as discrete or continuous.
      * -Discrete pairs take the result of the underlying manifold and directly manipulate regular contact constraints. 
-     * -Inner sphere pairs, with sufficient relative linear velocity, can create one or two additional sphere-convex pairs per convex pair.
-     * -Substepping pairs potentially generate a bunch of child pairs, depending on the collidable velocities, and then choose from the resulting manifolds. 
-     * Once the best manifold is selected, constraint management is similar to the discrete case.
-     * -Inner sphere + substepping pairs just do both of the above.
+     * -Continuous pairs perform a sweep to approximate the time of impact between two objects, then submits a pair to the CollisionBatcher with poses integrated to that time.
+     * After the collision finishes, the resulting manifold is warped back to the current time to provide high quality speculative contacts.
      * 2) Individual versus compound types. Compound pairs will tend to create child convex pairs and wait for their completion. This ensures the greatest number of simultaneous
      * SIMD-friendly manifold calculations. For example, four compound-compound pairs could result in 60 sphere-capsule subpairs which can then all be executed in a SIMD fashion.
-     * 
-     * These two build on each other- a compound-compound pair with inner sphere enabled will want to generate both the inner sphere pairs and the regular pairs simultaneously to avoid 
-     * traversing any acceleration structures multiple times.
-     * 
-     * Note that its possible for the evaluation of a pair to generate more pairs. This is most easily seen in compound pairs or substep pairs, but we do permit less obvious cases.
-     * For example, a potential optimization for substepping is only do as many substeps as are needed to find the first manifold with approaching contacts (or some other heuristic).
-     * In order for such an optimization to be used, we must be willing to spawn more pairs if the first set of substeps we did didn't find any heuristically accepted manifolds.
-     * In the limit, that would mean doing one substep at a time. (In practice, we'd probably just try to fill up the remainder of a SIMD batch.)
-     * 
-     * Another example: imagine a high-complexity convex-convex test that has highly divergent execution, but with smaller pieces which are not as divergent.
+     *  
+     * Note that its possible for the evaluation of a pair to generate more pairs. This is currently only seen in compound pairs, but we do permit less obvious cases. 
+     * Imagine a high-complexity convex-convex test that has highly divergent execution, but with smaller pieces which are not as divergent.
      * SIMD operations don't map well to divergent execution, so if the individual jobs are large enough, it could be worth it to spawn new pairs for the nondivergent pieces.
-     * Most convexes aren't complicated enough to warrant this (often it's faster to simply execute all paths), but it may be relevant in the convex hull versus convex hull case.
+     * Most convexes aren't complicated enough to warrant this (often it's faster to simply execute all paths), but it's potentially useful.
      * 
      * In any case where more pairs are generated, evaluating just the current set of pairs is insufficient to guarantee completion. Instead, execution can be thought of like traversing a graph.
      * Each work-creating pair may create an entry on the execution stack if its 'execution threshold' is reached (the arbitrary size which, when reached, results in the execution of the 
@@ -54,7 +46,7 @@ namespace BepuPhysics.CollisionDetection
      * 
      * In practice, there are two phases. The first phase takes in the broad phase-generated top level pairs. At this stage, we do not need to resort to executing incomplete bundles. 
      * Instead, we just continue to work on the top level pairs until none remain. The second phase kicks in here. Since no further top-level work is being generated, we start trying to 
-     * flush all the remaining pairs, even if they are not at the execution threshold, as in the above traverse-and-reset approach.
+     * flush all the remaining pairs, even if they are not at the execution threshold.
      * 
      * All of the above works within the context of a single thread. There may be many threads in flight, but each one is guaranteed to be handling different top level pairs.
      * That means all of the pair storage is thread local and requires no synchronization. It is also mostly ephemeral- once the thread finishes, only a small amount of information needs
@@ -67,10 +59,9 @@ namespace BepuPhysics.CollisionDetection
      * 2) Any accumulated impulse from the previous frame's contact solve should be distributed over the new set of contacts for warm starting this frame's solve.
      * 3) Any change in contact count should result in the removal of the previous constraint (if present) and the addition of the new constraint (if above zero contacts).
      * This mapping is stored in a single dictionary. The previous frame's mapping is treated as read-only during the new frame's narrow phase execution, 
-     * //so no synchronization is required to read it. The current frame updates pointerse in the dictionary and collects deferred adds on each worker thread for later flushing.
+     * so no synchronization is required to read it. The current frame updates pointerse in the dictionary and collects deferred adds on each worker thread for later flushing.
      * 
      * Constraints associated with 'stale' overlaps (those which were not updated during the current frame) are removed in a postpass.
-     * 
      */
 
 
@@ -120,6 +111,60 @@ namespace BepuPhysics.CollisionDetection
             contactConstraintAccessors[id] = contactConstraintAccessor;
         }
 
+        /// <summary>
+        /// Looks up the contact constraint accessor for the given constraint type id if it exists.
+        /// </summary>
+        /// <param name="constraintTypeId">Constraint type id to look up a constraint accessor for.</param>
+        /// <param name="accessor">Accessor for the given type id.</param>
+        /// <returns>True if the constraint type id refers to a registered accessor, false otherwise.</returns>
+        public bool TryGetContactConstraintAccessor(int constraintTypeId, out ContactConstraintAccessor accessor)
+        {
+            if (IsContactConstraintType(constraintTypeId) && contactConstraintAccessors.Length > constraintTypeId)
+            {
+                accessor = contactConstraintAccessors[constraintTypeId];
+                if (accessor != null)
+                    return true;
+            }
+            accessor = null;
+            return false;
+        }
+
+        /// <summary>
+        /// Tries to extract contact prestep, impulse, and body reference data from the given handle. If it's not a contact constraint, returns false.
+        /// </summary>
+        /// <typeparam name="TExtractor">Type of the extractor used to collect contact data from the solver.</typeparam>
+        /// <param name="constraintHandle">Constraint to try to extract data from.</param>
+        /// <param name="extractor">Extractor used to collect contact data from the solver.</param>
+        /// <returns>True if the constraint was a contact type, false otherwise.</returns>
+        public bool TryExtractSolverContactData<TExtractor>(int constraintHandle, ref TExtractor extractor) where TExtractor : struct, ISolverContactDataExtractor
+        {
+            ref var constraintLocation = ref Solver.HandleToConstraint[constraintHandle];
+            if (TryGetContactConstraintAccessor(constraintLocation.TypeId, out var accessor))
+            {
+                accessor.ExtractContactData(constraintLocation, Solver, ref extractor);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Tries to extract prestep and impulse contact data from the given handle. If it's not a contact constraint, returns false.
+        /// </summary>
+        /// <typeparam name="TExtractor">Type of the extractor used to collect contact data from the solver.</typeparam>
+        /// <param name="constraintHandle">Constraint to try to extract data from.</param>
+        /// <param name="extractor">Extractor used to collect contact data from the solver.</param>
+        /// <returns>True if the constraint was a contact type, false otherwise.</returns>
+        public bool TryExtractSolverContactPrestepAndImpulses<TExtractor>(int constraintHandle, ref TExtractor extractor) where TExtractor : struct, ISolverContactPrestepAndImpulsesExtractor
+        {
+            ref var constraintLocation = ref Solver.HandleToConstraint[constraintHandle];
+            if (TryGetContactConstraintAccessor(constraintLocation.TypeId, out var accessor))
+            {
+                accessor.ExtractContactPrestepAndImpulses(constraintLocation, Solver, ref extractor);
+                return true;
+            }
+            return false;
+        }
+
         protected NarrowPhase()
         {
             flushWorkerLoop = FlushWorkerLoop;
@@ -133,6 +178,7 @@ namespace BepuPhysics.CollisionDetection
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsContactConstraintType(int constraintTypeId)
         {
+            Debug.Assert(constraintTypeId >= 0);
             return constraintTypeId < PairCache.CollisionConstraintTypeCount;
         }
 
@@ -448,7 +494,7 @@ namespace BepuPhysics.CollisionDetection
                         Simulation.Shapes[aCollidable.Shape.Type].GetShapeData(aCollidable.Shape.Index, out var shapeDataA, out var shapeSizeA);
                         Simulation.Shapes[bCollidable.Shape.Type].GetShapeData(bCollidable.Shape.Index, out var shapeDataB, out var shapeSizeB);
                         float minimumSweepTimestepA, sweepConvergenceThresholdA;
-                        if(aCollidable.Continuity.Mode == ContinuousDetectionMode.Continuous)
+                        if (aCollidable.Continuity.Mode == ContinuousDetectionMode.Continuous)
                         {
                             minimumSweepTimestepA = aCollidable.Continuity.MinimumSweepTimestep;
                             sweepConvergenceThresholdA = aCollidable.Continuity.SweepConvergenceThreshold;

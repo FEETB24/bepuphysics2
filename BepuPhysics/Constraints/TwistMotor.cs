@@ -1,19 +1,17 @@
-﻿using BepuPhysics.CollisionDetection;
-using BepuUtilities;
+﻿using BepuUtilities;
 using BepuUtilities.Memory;
 using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using static BepuUtilities.GatherScatter;
-using Quaternion = BepuUtilities.Quaternion;
 
 namespace BepuPhysics.Constraints
 {
     /// <summary>
     /// Constrains the twist velocity between two bodies to a target.
     /// </summary>
-    public struct TwistMotor : IConstraintDescription<TwistMotor>
+    public struct TwistMotor : ITwoBodyConstraintDescription<TwistMotor>
     {
         /// <summary>
         /// Local twist axis attached to body A.

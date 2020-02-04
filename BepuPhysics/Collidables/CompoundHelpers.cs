@@ -1,4 +1,5 @@
-﻿using BepuUtilities.Collections;
+﻿using BepuUtilities;
+using BepuUtilities.Collections;
 using BepuUtilities.Memory;
 using System;
 using System.Collections.Generic;
@@ -49,7 +50,7 @@ namespace BepuPhysics.Collidables
         /// <param name="localPose">Pose of the shape in the compound's local space.</param>
         /// <param name="weight">Weight of the shape. If the compound is interpreted as a dynamic, this will be used as the mass and scales the inertia tensor. 
         /// Otherwise, it is used for recentering.</param>
-        public void Add<TShape>(in TShape shape, in RigidPose localPose, float weight) where TShape : struct, IConvexShape
+        public void Add<TShape>(in TShape shape, in RigidPose localPose, float weight) where TShape : unmanaged, IConvexShape
         {
             ref var child = ref Children.Allocate(Pool);
             child.LocalPose = localPose;
@@ -66,7 +67,7 @@ namespace BepuPhysics.Collidables
         /// <param name="shape">Shape to add.</param>
         /// <param name="localPose">Pose of the shape in the compound's local space.</param>
         /// <param name="weight">Weight of the shape. If the compound is interpreted as a dynamic, this will be used as the mass. Otherwise, it is used for recentering.</param>
-        public void AddForKinematic<TShape>(in TShape shape, in RigidPose localPose, float weight) where TShape : struct, IConvexShape
+        public void AddForKinematic<TShape>(in TShape shape, in RigidPose localPose, float weight) where TShape : unmanaged, IConvexShape
         {
             ref var child = ref Children.Allocate(Pool);
             child.LocalPose = localPose;

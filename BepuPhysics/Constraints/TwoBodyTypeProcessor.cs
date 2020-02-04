@@ -49,8 +49,8 @@ namespace BepuPhysics.Constraints
     /// </summary>
     public abstract class TwoBodyTypeProcessor<TPrestepData, TProjection, TAccumulatedImpulse, TConstraintFunctions>
         : TypeProcessor<TwoBodyReferences, TPrestepData, TProjection, TAccumulatedImpulse>
-        where TPrestepData : struct where TProjection : struct where TAccumulatedImpulse : struct
-        where TConstraintFunctions : struct, IConstraintFunctions<TPrestepData, TProjection, TAccumulatedImpulse>
+        where TPrestepData : unmanaged where TProjection : unmanaged where TAccumulatedImpulse : unmanaged
+        where TConstraintFunctions : unmanaged, IConstraintFunctions<TPrestepData, TProjection, TAccumulatedImpulse>
     {
         protected sealed override int InternalBodiesPerConstraint => 2;
 
@@ -155,7 +155,7 @@ namespace BepuPhysics.Constraints
                 ref var accumulatedImpulses = ref Unsafe.Add(ref accumulatedImpulsesBase, i);
                 ref var bodyReferences = ref Unsafe.Add(ref bodyReferencesBase, i);
                 int count = GetCountInBundle(ref typeBatch, i);
-                Bodies.GatherVelocities(ref bodyVelocities, ref bodyReferences, count, out var wsvA, out var wsvB);
+                Bodies.GatherVelocities(ref bodyVelocities, ref bodyReferences, count, out var wsvA, out var wsvB); 
                 function.WarmStart(ref wsvA, ref wsvB, ref projection, ref accumulatedImpulses);
                 Bodies.ScatterVelocities(ref wsvA, ref wsvB, ref bodyVelocities, ref bodyReferences, count);
 
@@ -175,7 +175,7 @@ namespace BepuPhysics.Constraints
                 ref var bodyReferences = ref Unsafe.Add(ref bodyReferencesBase, i);
                 int count = GetCountInBundle(ref typeBatch, i);
                 Bodies.GatherVelocities(ref bodyVelocities, ref bodyReferences, count, out var wsvA, out var wsvB);
-                function.Solve(ref wsvA, ref wsvB, ref projection, ref accumulatedImpulses);
+                function.Solve(ref wsvA, ref wsvB, ref projection, ref accumulatedImpulses); 
                 Bodies.ScatterVelocities(ref wsvA, ref wsvB, ref bodyVelocities, ref bodyReferences, count);
             }
         }
@@ -247,8 +247,8 @@ namespace BepuPhysics.Constraints
 
     public abstract class TwoBodyContactTypeProcessor<TPrestepData, TProjection, TAccumulatedImpulse, TConstraintFunctions>
         : TwoBodyTypeProcessor<TPrestepData, TProjection, TAccumulatedImpulse, TConstraintFunctions>
-        where TPrestepData : struct where TProjection : struct where TAccumulatedImpulse : struct
-        where TConstraintFunctions : struct, IContactConstraintFunctions<TPrestepData, TProjection, TAccumulatedImpulse>
+        where TPrestepData : unmanaged where TProjection : unmanaged where TAccumulatedImpulse : unmanaged
+        where TConstraintFunctions : unmanaged, IContactConstraintFunctions<TPrestepData, TProjection, TAccumulatedImpulse>
     {
         public unsafe override void IncrementallyUpdateContactData(ref TypeBatch typeBatch, Bodies bodies, float dt, float inverseDt, int startBundle, int exclusiveEndBundle)
         {

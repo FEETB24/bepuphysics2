@@ -59,6 +59,9 @@ namespace DemoContentBuilder
                                 case ContentType.Mesh:
                                     newElement.Content = MeshBuilder.Build(stream);
                                     break;
+                                case ContentType.Image:
+                                    newElement.Content = Texture2DBuilder.Build(stream);
+                                    break;
                                 default:
                                     throw new ArgumentException("Requested content type does not have a registered builder.");
                             }

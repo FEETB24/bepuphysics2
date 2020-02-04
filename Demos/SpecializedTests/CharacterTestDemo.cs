@@ -3,19 +3,11 @@ using DemoRenderer;
 using BepuPhysics;
 using BepuPhysics.Collidables;
 using System.Numerics;
-using Quaternion = BepuUtilities.Quaternion;
 using System;
-using BepuPhysics.CollisionDetection;
-using System.Runtime.CompilerServices;
-using System.Diagnostics;
-using BepuPhysics.Constraints;
 using DemoContentLoader;
 using DemoUtilities;
-using BepuUtilities.Memory;
-using static BepuUtilities.GatherScatter;
 using Demos.Demos.Characters;
 using BepuUtilities.Collections;
-using Demos.Demos;
 
 namespace Demos.SpecializedTests
 {
@@ -92,7 +84,7 @@ namespace Demos.SpecializedTests
                     Vector2 offsetFromCenter = new Vector2(x - planeWidth / 2, y - planeHeight / 2);
                     return new Vector3(offsetFromCenter.X, MathF.Cos(x / 2f) + MathF.Sin(y / 2f), offsetFromCenter.Y);
                 }, new Vector3(2, 1, 2), BufferPool, out var planeMesh);
-            Simulation.Statics.Add(new StaticDescription(new Vector3(0, -2, 0), Quaternion.CreateFromAxisAngle(new Vector3(0, 1, 0), MathF.PI / 2),
+            Simulation.Statics.Add(new StaticDescription(new Vector3(0, -2, 0), QuaternionEx.CreateFromAxisAngle(new Vector3(0, 1, 0), MathF.PI / 2),
                 new CollidableDescription(Simulation.Shapes.Add(planeMesh), 0.1f)));
 
             removedCharacters = new QuickQueue<CharacterController>(characters.CharacterCount, BufferPool);
@@ -106,7 +98,7 @@ namespace Demos.SpecializedTests
             for (int i = 0; i < characters.CharacterCount; ++i)
             {
                 ref var character = ref characters.GetCharacterByIndex(i);
-                if (frameIndex % 128 == 0)
+                if ((frameIndex + i) % 128 == 0)
                     character.TryJump = true;
                 var tangent = Vector3.Cross(new BodyReference(character.BodyHandle, Simulation.Bodies).Pose.Position, Vector3.UnitY);
                 var tangentLengthSquared = tangent.LengthSquared();

@@ -42,7 +42,7 @@ namespace Demos.Demos
     public interface IContactEventHandler
     {
         void OnContactAdded<TManifold>(CollidableReference eventSource, CollidablePair pair, ref TManifold contactManifold,
-            in Vector3 contactOffset, in Vector3 contactNormal, float depth, int featureId, int contactIndex, int workerIndex) where TManifold : IContactManifold;
+            in Vector3 contactOffset, in Vector3 contactNormal, float depth, int featureId, int contactIndex, int workerIndex) where TManifold : struct, IContactManifold<TManifold>;
     }
 
     public unsafe class ContactEvents<TEventHandler> : IDisposable where TEventHandler : IContactEventHandler
@@ -122,7 +122,7 @@ namespace Demos.Demos
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void UpdatePreviousCollision<TManifold>(ref PreviousCollisionData collision, ref TManifold manifold) where TManifold : IContactManifold
+        void UpdatePreviousCollision<TManifold>(ref PreviousCollisionData collision, ref TManifold manifold) where TManifold : struct, IContactManifold<TManifold>
         {
             Debug.Assert(manifold.Count <= 4, "This demo was built on the assumption that nonconvex manifolds will have a maximum of four contacts, but that might have changed.");
             //If the above assert gets hit because of a change to nonconvex manifold capacities, the packed feature id representation this uses will need to be updated.
@@ -135,7 +135,7 @@ namespace Demos.Demos
             collision.Fresh = true;
         }
 
-        void HandleManifoldForCollidable<TManifold>(int workerIndex, CollidableReference source, CollidableReference other, CollidablePair pair, ref TManifold manifold) where TManifold : IContactManifold
+        void HandleManifoldForCollidable<TManifold>(int workerIndex, CollidableReference source, CollidableReference other, CollidablePair pair, ref TManifold manifold) where TManifold : struct, IContactManifold<TManifold>
         {
             if (listeners.GetTableIndices(ref source, out var tableIndex, out var listenerIndex))
             {
@@ -192,17 +192,10 @@ namespace Demos.Demos
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void HandleManifold(int workerIndex, CollidablePair pair, ConvexContactManifold* manifold)
+        public void HandleManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold) where TManifold : struct, IContactManifold<TManifold>
         {
-            HandleManifoldForCollidable(workerIndex, pair.A, pair.B, pair, ref *manifold);
-            HandleManifoldForCollidable(workerIndex, pair.B, pair.A, pair, ref *manifold);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void HandleManifold(int workerIndex, CollidablePair pair, NonconvexContactManifold* manifold)
-        {
-            HandleManifoldForCollidable(workerIndex, pair.A, pair.B, pair, ref *manifold);
-            HandleManifoldForCollidable(workerIndex, pair.B, pair.A, pair, ref *manifold);
+            HandleManifoldForCollidable(workerIndex, pair.A, pair.B, pair, ref manifold);
+            HandleManifoldForCollidable(workerIndex, pair.B, pair.A, pair, ref manifold);
         }
 
         public void Flush()
@@ -293,29 +286,17 @@ namespace Demos.Demos
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void ConfigureMaterial(out PairMaterialProperties pairMaterial)
+        public unsafe bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial) where TManifold : struct, IContactManifold<TManifold>
         {
             pairMaterial.FrictionCoefficient = 1f;
             pairMaterial.MaximumRecoveryVelocity = 2f;
             pairMaterial.SpringSettings = new SpringSettings(30, 1);
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, NonconvexContactManifold* manifold, out PairMaterialProperties pairMaterial)
-        {
-            ConfigureMaterial(out pairMaterial);
-            events.HandleManifold(workerIndex, pair, manifold);
-            return true;
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, ConvexContactManifold* manifold, out PairMaterialProperties pairMaterial)
-        {
-            ConfigureMaterial(out pairMaterial);
-            events.HandleManifold(workerIndex, pair, manifold);
+            events.HandleManifold(workerIndex, pair, ref manifold);
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ConvexContactManifold* manifold)
+        public bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold)
         {
             return true;
         }
@@ -349,7 +330,7 @@ namespace Demos.Demos
             public QuickList<ContactResponseParticle> Particles;
 
             public void OnContactAdded<TManifold>(CollidableReference eventSource, CollidablePair pair, ref TManifold contactManifold,
-                in Vector3 contactOffset, in Vector3 contactNormal, float depth, int featureId, int contactIndex, int workerIndex) where TManifold : IContactManifold
+                in Vector3 contactOffset, in Vector3 contactNormal, float depth, int featureId, int contactIndex, int workerIndex) where TManifold : struct, IContactManifold<TManifold>
             {
                 //var other = pair.A.Packed == eventSource.Packed ? pair.B : pair.A;
                 //Console.WriteLine($"Added contact: ({eventSource}, {other}): {featureId}");
@@ -386,7 +367,7 @@ namespace Demos.Demos
 
             var listenedBody2 = Simulation.Bodies.Add(BodyDescription.CreateConvexDynamic(new Vector3(0.5f, 10, 0), 1, Simulation.Shapes, new Capsule(0.25f, 0.7f)));
             events.RegisterListener(new CollidableReference(CollidableMobility.Dynamic, listenedBody2));
-            
+
             Simulation.Statics.Add(new StaticDescription(new Vector3(0, -0.5f, 0), new CollidableDescription(Simulation.Shapes.Add(new Box(30, 1, 30)), 0.04f)));
             Simulation.Statics.Add(new StaticDescription(new Vector3(0, 3, 15), new CollidableDescription(Simulation.Shapes.Add(new Box(30, 5, 1)), 0.04f)));
 

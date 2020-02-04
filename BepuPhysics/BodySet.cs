@@ -116,7 +116,6 @@ namespace BepuPhysics
 
         internal void ApplyDescriptionByIndex(int index, in BodyDescription description)
         {
-            BundleIndexing.GetBundleIndices(index, out var bundleIndex, out var innerIndex);
             Poses[index] = description.Pose;
             Velocities[index] = description.Velocity;
             ConveyorSettings[index] = description.ConveyorSettings;

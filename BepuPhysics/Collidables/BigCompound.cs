@@ -3,7 +3,6 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using BepuUtilities.Memory;
 using System.Diagnostics;
-using Quaternion = BepuUtilities.Quaternion;
 using BepuUtilities;
 using BepuUtilities.Collections;
 using BepuPhysics.Trees;
@@ -100,7 +99,7 @@ namespace BepuPhysics.Collidables
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public LeafTester(in Buffer<CompoundChild> children, Shapes shapes, in TRayHitHandler handler, in Matrix3x3 orientation, in RayData originalRay)
             {
-                Children = (CompoundChild*)children.Memory;
+                Children = children.Memory;
                 Shapes = shapes;
                 HitRotator.HitHandler = handler;
                 HitRotator.Orientation = orientation;

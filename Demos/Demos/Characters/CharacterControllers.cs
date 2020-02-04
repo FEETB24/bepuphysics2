@@ -1,23 +1,19 @@
 ﻿using BepuPhysics;
 using BepuPhysics.Collidables;
 using BepuPhysics.CollisionDetection;
-using BepuPhysics.Constraints;
 using BepuUtilities;
 using BepuUtilities.Collections;
 using BepuUtilities.Memory;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Threading;
-using Quaternion = BepuUtilities.Quaternion;
 
 namespace Demos.Demos.Characters
 {
     /// <summary>
-    /// Raw data for a character controller instance.
+    /// Raw data for a dynamic character controller instance.
     /// </summary>
     public struct CharacterController
     {
@@ -256,7 +252,7 @@ namespace Demos.Demos.Characters
         Buffer<ContactCollectionWorkerCache> contactCollectionWorkerCaches;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryReportContacts<TManifold>(CollidableReference characterCollidable, CollidableReference supportCollidable, CollidablePair pair, ref TManifold manifold, int workerIndex) where TManifold : struct, IContactManifold
+        bool TryReportContacts<TManifold>(CollidableReference characterCollidable, CollidableReference supportCollidable, CollidablePair pair, ref TManifold manifold, int workerIndex) where TManifold : struct, IContactManifold<TManifold>
         {
             if (characterCollidable.Mobility == CollidableMobility.Dynamic && characterCollidable.Handle < bodyHandleToCharacterIndex.Length)
             {
@@ -283,7 +279,7 @@ namespace Demos.Demos.Characters
                     ref var bodyLocation = ref Simulation.Bodies.HandleToLocation[character.BodyHandle];
                     ref var set = ref Simulation.Bodies.Sets[bodyLocation.SetIndex];
                     ref var pose = ref set.Poses[bodyLocation.Index];
-                    Quaternion.Transform(character.LocalUp, pose.Orientation, out var up);
+                    QuaternionEx.Transform(character.LocalUp, pose.Orientation, out var up);
                     //Note that this branch is compiled out- the generic constraints force type specialization.
                     if (manifold.Convex)
                     {
@@ -396,7 +392,7 @@ namespace Demos.Demos.Characters
         /// <param name="materialProperties">Material properties for this pair. Will be modified if the pair involves a character.</param>
         /// <returns>True if the pair involved a character pair, false otherwise.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryReportContacts<TManifold>(in CollidablePair pair, ref TManifold manifold, int workerIndex, ref PairMaterialProperties materialProperties) where TManifold : struct, IContactManifold
+        public bool TryReportContacts<TManifold>(in CollidablePair pair, ref TManifold manifold, int workerIndex, ref PairMaterialProperties materialProperties) where TManifold : struct, IContactManifold<TManifold>
         {
             Debug.Assert(contactCollectionWorkerCaches.Allocated && workerIndex < contactCollectionWorkerCaches.Length && contactCollectionWorkerCaches[workerIndex].SupportCandidates.Allocated,
                 "Worker caches weren't properly allocated; did you forget to call PrepareForContacts before collision detection?");
@@ -531,7 +527,7 @@ namespace Demos.Demos.Characters
                     //If the character is jumping, don't create a constraint.
                     if (supportCandidate.Depth > float.MinValue && character.TryJump)
                     {
-                        Quaternion.Transform(character.LocalUp, Simulation.Bodies.ActiveSet.Poses[bodyLocation.Index].Orientation, out var characterUp);
+                        QuaternionEx.Transform(character.LocalUp, Simulation.Bodies.ActiveSet.Poses[bodyLocation.Index].Orientation, out var characterUp);
                         //Note that we assume that character orientations are constant. This isn't necessarily the case in all uses, but it's a decent approximation.
                         var characterUpVelocity = Vector3.Dot(Simulation.Bodies.ActiveSet.Velocities[bodyLocation.Index].Linear, characterUp);
                         //We don't want the character to be able to 'superboost' by simply adding jump speed on top of horizontal motion.
@@ -581,7 +577,7 @@ namespace Demos.Demos.Characters
                         Matrix3x3 surfaceBasis;
                         surfaceBasis.Y = supportCandidate.Normal;
                         //Note negation: we're using a right handed basis where -Z is forward, +Z is backward.
-                        Quaternion.Transform(character.LocalUp, Simulation.Bodies.ActiveSet.Poses[bodyLocation.Index].Orientation, out var up);
+                        QuaternionEx.Transform(character.LocalUp, Simulation.Bodies.ActiveSet.Poses[bodyLocation.Index].Orientation, out var up);
                         var rayDistance = Vector3.Dot(character.ViewDirection, surfaceBasis.Y);
                         var rayVelocity = Vector3.Dot(up, surfaceBasis.Y);
                         Debug.Assert(rayVelocity > 0,
@@ -594,11 +590,11 @@ namespace Demos.Demos.Characters
                         }
                         else
                         {
-                            Quaternion.GetQuaternionBetweenNormalizedVectors(Vector3.UnitY, surfaceBasis.Y, out var rotation);
-                            Quaternion.TransformUnitZ(rotation, out surfaceBasis.Z);
+                            QuaternionEx.GetQuaternionBetweenNormalizedVectors(Vector3.UnitY, surfaceBasis.Y, out var rotation);
+                            QuaternionEx.TransformUnitZ(rotation, out surfaceBasis.Z);
                         }
                         surfaceBasis.X = Vector3.Cross(surfaceBasis.Y, surfaceBasis.Z);
-                        Quaternion.CreateFromRotationMatrix(surfaceBasis, out var surfaceBasisQuaternion);
+                        QuaternionEx.CreateFromRotationMatrix(surfaceBasis, out var surfaceBasisQuaternion);
                         if (supportCandidate.Support.Mobility != CollidableMobility.Static)
                         {
                             //The character is supported by a body.

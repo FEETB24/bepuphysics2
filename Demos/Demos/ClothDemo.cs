@@ -8,12 +8,9 @@ using DemoRenderer;
 using DemoRenderer.UI;
 using DemoUtilities;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Text;
-using Quaternion = BepuUtilities.Quaternion;
 
 namespace Demos.Demos
 {
@@ -66,7 +63,7 @@ namespace Demos.Demos
             {
                 return ClothCollisionFilter.Test(Filters[a.Handle], Filters[b.Handle]);
             }
-            return true;
+            return a.Mobility == CollidableMobility.Dynamic || b.Mobility == CollidableMobility.Dynamic;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -74,29 +71,18 @@ namespace Demos.Demos
         {
             return true;
         }
-
+         
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void ConfigureMaterial(out PairMaterialProperties pairMaterial)
+        public unsafe bool ConfigureContactManifold<TManifold>(int workerIndex, CollidablePair pair, ref TManifold manifold, out PairMaterialProperties pairMaterial) where TManifold : struct, IContactManifold<TManifold>
         {
             pairMaterial.FrictionCoefficient = 0.25f;
             pairMaterial.MaximumRecoveryVelocity = 2f;
             pairMaterial.SpringSettings = new SpringSettings(30, 1);
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, NonconvexContactManifold* manifold, out PairMaterialProperties pairMaterial)
-        {
-            ConfigureMaterial(out pairMaterial);
-            return true;
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, ConvexContactManifold* manifold, out PairMaterialProperties pairMaterial)
-        {
-            ConfigureMaterial(out pairMaterial);
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ConvexContactManifold* manifold)
+        public unsafe bool ConfigureContactManifold(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB, ref ConvexContactManifold manifold)
         {
             return true;
         }
@@ -137,7 +123,7 @@ namespace Demos.Demos
                 {
                     description.LocalInertia.InverseMass = isKinematic(rowIndex, columnIndex, width, height) ? 0 : inverseMass;
                     var localPosition = new Vector3(columnIndex * spacing, rowIndex * -spacing, 0);
-                    Quaternion.TransformWithoutOverlap(localPosition, orientation, out var rotatedPosition);
+                    QuaternionEx.TransformWithoutOverlap(localPosition, orientation, out var rotatedPosition);
                     description.Pose.Position = rotatedPosition + position;
                     var handle = Simulation.Bodies.Add(description);
                     handles[rowIndex, columnIndex] = handle;
@@ -226,7 +212,7 @@ namespace Demos.Demos
             }
 
             int clothInstanceId = 0;
-            var initialRotation = Quaternion.CreateFromAxisAngle(new Vector3(1, 0, 0), MathF.PI * -0.5f);
+            var initialRotation = QuaternionEx.CreateFromAxisAngle(new Vector3(1, 0, 0), MathF.PI * -0.5f);
             {
                 var position = new Vector3(-90, 40, 0);
                 var handles = CreateBodyGrid(position, initialRotation, 10, 30, 1f, 0.65f, 1, clothInstanceId++, filters, KinematicTopCorners);
@@ -256,10 +242,10 @@ namespace Demos.Demos
 
 
             Simulation.Statics.Add(new StaticDescription(
-                new Vector3(60, 20, 0), Quaternion.CreateFromAxisAngle(new Vector3(0, 0, 1), MathF.PI * 0.5f),
+                new Vector3(60, 20, 0), QuaternionEx.CreateFromAxisAngle(new Vector3(0, 0, 1), MathF.PI * 0.5f),
                 new CollidableDescription(Simulation.Shapes.Add(new Capsule(8, 120)), 0.1f)));
             Simulation.Statics.Add(new StaticDescription(
-                new Vector3(30, 5, 0), Quaternion.CreateFromAxisAngle(new Vector3(1, 0, 0), MathF.PI * 0.5f),
+                new Vector3(30, 5, 0), QuaternionEx.CreateFromAxisAngle(new Vector3(1, 0, 0), MathF.PI * 0.5f),
                 new CollidableDescription(Simulation.Shapes.Add(new Capsule(8, 60)), 0.1f)));
 
             {

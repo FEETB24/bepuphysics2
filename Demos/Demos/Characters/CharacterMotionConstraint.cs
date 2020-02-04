@@ -1,21 +1,14 @@
 ﻿using BepuUtilities;
-using DemoRenderer;
 using BepuPhysics;
-using BepuPhysics.Collidables;
 using System.Numerics;
-using Quaternion = BepuUtilities.Quaternion;
 using System;
-using BepuPhysics.CollisionDetection;
 using System.Runtime.CompilerServices;
-using System.Diagnostics;
 using BepuPhysics.Constraints;
-using DemoContentLoader;
-using DemoUtilities;
 using BepuUtilities.Memory;
 using static BepuUtilities.GatherScatter;
 
 namespace Demos.Demos.Characters
-{ 
+{
     public struct CharacterMotionAccumulatedImpulse
     {
         public Vector2Wide Horizontal;
@@ -34,7 +27,7 @@ namespace Demos.Demos.Characters
     /// <summary>
     /// Description of a character motion constraint where the support is static.
     /// </summary>
-    public struct StaticCharacterMotionConstraint : IConstraintDescription<StaticCharacterMotionConstraint>
+    public struct StaticCharacterMotionConstraint : IOneBodyConstraintDescription<StaticCharacterMotionConstraint>
     {
         /// <summary>
         /// Maximum force that the horizontal motion constraint can apply to reach the current velocity goal.
@@ -329,7 +322,7 @@ namespace Demos.Demos.Characters
     /// <summary>
     /// Description of a character motion constraint where the support is dynamic.
     /// </summary>
-    public struct DynamicCharacterMotionConstraint : IConstraintDescription<DynamicCharacterMotionConstraint>
+    public struct DynamicCharacterMotionConstraint : ITwoBodyConstraintDescription<DynamicCharacterMotionConstraint>
     {
         /// <summary>
         /// Maximum force that the horizontal motion constraint can apply to reach the current velocity goal.

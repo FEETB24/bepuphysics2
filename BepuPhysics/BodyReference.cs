@@ -13,7 +13,7 @@ namespace BepuPhysics
     /// <summary>
     /// Convenience structure for directly referring to a body's properties.
     /// </summary>
-    /// <remarks>Note that this type makes no attempt to protect against unsafe modification of body properties, nor does it try to wake up bodies if they are asleep.</remarks>
+    /// <remarks>Note that this type makes no attempt to protect against unsafe modification of body properties, nor does modifying its properties try to wake up bodies if they are asleep.</remarks>
     public struct BodyReference
     {
         /// <summary>
@@ -56,16 +56,37 @@ namespace BepuPhysics
         public ref BodyLocation Location
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get { return ref Bodies.HandleToLocation[Handle]; }
+            get
+            {
+                Bodies.ValidateExistingHandle(Handle);
+                return ref Bodies.HandleToLocation[Handle];
+            }
         }
 
         /// <summary>
-        /// Gets whether the body is in the active set.
+        /// Gets or sets whether the body is in the active set. Setting this to true will attempt to wake the body; setting it to false will force the body and any constraint-connected bodies asleep.
         /// </summary>
-        public bool IsActive
+        public bool Awake
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get { return Location.SetIndex == 0; }
+            set
+            {
+                if (Awake)
+                {
+                    if (!value)
+                    {
+                        Bodies.sleeper.Sleep(Location.Index);
+                    }
+                }
+                else
+                {
+                    if (value)
+                    {
+                        Bodies.awakener.AwakenBody(Handle);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -162,6 +183,38 @@ namespace BepuPhysics
         }
 
         /// <summary>
+        /// Gets whether the body is kinematic, meaning its inverse inertia and mass are all zero.
+        /// </summary>
+        public bool Kinematic { get { return Bodies.IsKinematic(LocalInertia); } }
+
+        /// <summary>
+        /// Gets whether the body has locked inertia, meaning its inverse inertia tensor is zero.
+        /// </summary>
+        public bool HasLockedInertia { get { return Bodies.HasLockedInertia(LocalInertia.InverseInertiaTensor); } }
+
+        /// <summary>
+        /// If the body is dynamic, turns the body kinematic by setting all inverse inertia and mass values to zero and activates it.
+        /// Any constraints connected to the body that now only contain kinematic references are removed.
+        /// If the body is kinematic, does nothing.
+        /// </summary>
+        public void BecomeKinematic()
+        {
+            if (!Kinematic)
+            {
+                Bodies.SetLocalInertia(Handle, default);
+            }
+        }
+
+        /// <summary>
+        /// Sets the body's local inertia to the provided inertia. Wakes up the body and correctly handles any transition between dynamic and kinematic states.
+        /// If the body moves from dynamic to kinematic, any constraints connected to the body that now only contain kinematic references are removed.
+        /// </summary>
+        public void SetLocalInertia(in BodyInertia localInertia)
+        {
+            Bodies.SetLocalInertia(Handle, localInertia);
+        }
+
+        /// <summary>
         /// Computes the world space inverse inertia tensor for the body based on the LocalInertia and Pose.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -172,6 +225,34 @@ namespace BepuPhysics
             ref var localInertia = ref set.LocalInertias[location.Index];
             ref var pose = ref set.Poses[location.Index];
             PoseIntegration.RotateInverseInertia(localInertia.InverseInertiaTensor, pose.Orientation, out inverseInertia);
+        }
+
+        /// <summary>
+        /// Gets a description of the body.
+        /// </summary>
+        /// <param name="description">Description of the body.</param>
+        public void GetDescription(out BodyDescription description)
+        {
+            Bodies.GetDescription(Handle, out description);
+        }
+
+        /// <summary>
+        /// Sets a body's properties according to a description. Properly handles any transitions between dynamic and kinematic and between shapeless and shapeful.
+        /// If the body is becoming kinematic, any constraints which only contain kinematic bodies will be removed. Wakes up the body.
+        /// </summary>
+        /// <param name="description">Description of the body.</param>
+        public void ApplyDescription(in BodyDescription description)
+        {
+            Bodies.ApplyDescription(Handle, description);
+        }
+
+        /// <summary>
+        /// Changes the shape of a body. Properly handles the transition between shapeless and shapeful. If the body is inactive, it will be forced awake.
+        /// </summary>
+        /// <param name="newShape">Index of the new shape to use for the body.</param>
+        public void SetShape(TypedIndex newShape)
+        {
+            Bodies.SetShape(Handle, newShape);
         }
 
         /// <summary>
@@ -243,7 +324,7 @@ namespace BepuPhysics
             ref var location = ref Location;
             ApplyImpulse(Bodies.Sets[location.SetIndex], location.Index, impulse, impulseOffset);
         }
-        
+
         /// <summary>
         /// Applies an impulse to a linear velocity. Does not wake the body up.
         /// </summary>
@@ -254,6 +335,17 @@ namespace BepuPhysics
             ref var location = ref Location;
             ref var set = ref Bodies.Sets[location.SetIndex];
             ApplyLinearImpulse(impulse, set.LocalInertias[location.Index].InverseMass, ref set.Velocities[location.Index].Linear);
+        }
+
+        /// <summary>
+        /// Computes the velocity of an offset point attached to the body.
+        /// </summary>
+        /// <param name="offset">Offset from the body's center to </param>
+        /// <param name="velocity">Effective velocity of the point if it were attached to the body.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void GetVelocityForOffset(in Vector3 offset, out Vector3 velocity)
+        {
+            velocity = Velocity.Linear + Vector3.Cross(Velocity.Angular, offset);
         }
 
         /// <summary>
@@ -270,6 +362,5 @@ namespace BepuPhysics
             PoseIntegration.RotateInverseInertia(localInertia.InverseInertiaTensor, pose.Orientation, out var inverseInertia);
             ApplyAngularImpulse(angularImpulse, inverseInertia, ref set.Velocities[location.Index].Angular);
         }
-
     }
 }

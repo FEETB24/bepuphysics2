@@ -62,7 +62,7 @@ namespace BepuUtilities.Collections
     /// <typeparam name="TKey">Type of key held by the container.</typeparam>
     /// <typeparam name="TValue">Type of value held by the container.</typeparam>
     /// <typeparam name="TEqualityComparer">Type of the equality tester and hash calculator used.</typeparam>
-    public struct QuickDictionary<TKey, TValue, TEqualityComparer> where TKey : struct where TValue : struct where TEqualityComparer : IEqualityComparerRef<TKey>
+    public struct QuickDictionary<TKey, TValue, TEqualityComparer> where TKey : unmanaged where TValue : unmanaged where TEqualityComparer : IEqualityComparerRef<TKey>
     {
         /// <summary>
         /// Gets the number of elements in the dictionary.
@@ -540,7 +540,7 @@ namespace BepuUtilities.Collections
         /// <param name="pool">Pool used for spans.</param>   
         /// <returns>True if the pair was added to the dictionary, false if the key was already present and its pair was replaced.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool AddAndReplace<TKeyPool, TValuePool, TTablePool>(TKey key, in TValue value, IUnmanagedMemoryPool pool)
+        public bool AddAndReplace(TKey key, in TValue value, IUnmanagedMemoryPool pool)
         {
             return AddAndReplaceRef(ref key, value, pool);
         }
