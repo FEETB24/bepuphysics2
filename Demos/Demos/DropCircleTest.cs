@@ -54,7 +54,6 @@ namespace Demos.Demos
             Simulation = Simulation.Create(BufferPool, _collisionGroups,
                 new DefaultPoseIntegratorCallbacks(BufferPool), timestepper: new CustomPositionLastTimestepper());
             
-            DefaultPoseIntegratorCallbacks.Simulation = Simulation;
             var boxShape = new Box(1, 1, 1);
             boxShape.ComputeInertia(1, out _boxInertia);
             _boxIndex = Simulation.Shapes.Add(boxShape);

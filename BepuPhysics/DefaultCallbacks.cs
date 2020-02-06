@@ -14,8 +14,6 @@ namespace BepuPhysics
 
     public struct DefaultPoseIntegratorCallbacks : IPoseIntegratorCallbacks
     {
-        public static Simulation Simulation;
-
         public Vector3 Gravity;
         public float LinearDamping;
         public float AngularDamping;
@@ -63,26 +61,17 @@ namespace BepuPhysics
             _linearDampingDictionary.Add(bodyIndex, linearDamping, pool);
         }
 
-
-
-
         public AngularIntegrationMode AngularIntegrationMode => AngularIntegrationMode.Nonconserving;
-
-        public DefaultPoseIntegratorCallbacks(IUnmanagedMemoryPool pool) : this()
+        
+        public DefaultPoseIntegratorCallbacks(IUnmanagedMemoryPool pool, Vector3? gravity = null, float linearDamping = .03f, float angularDamping = .03f) : this()
         {
-            Gravity = new Vector3(0, -9.81f, 0);
-            LinearDamping = 0.03f;
-            AngularDamping = 0.03f;
-            _angularDampingDictionary = new QuickDictionary<int, float, IntComparer>(1, pool);
-            _linearDampingDictionary = new QuickDictionary<int, float, IntComparer>(1, pool);
-
-        }
-
-        public DefaultPoseIntegratorCallbacks(Vector3 gravity, float linearDamping = .03f, float angularDamping = .03f) : this()
-        {
-            Gravity = gravity;
+            Gravity = gravity ?? new Vector3(0, -9.81f, 0);
             LinearDamping = linearDamping;
             AngularDamping = angularDamping;
+            _angularDampingDictionary = new QuickDictionary<int, float, IntComparer>(1, pool);
+            _linearDampingDictionary = new QuickDictionary<int, float, IntComparer>(1, pool);
+            _linearDampingDictionary.Add(-1, LinearDamping, pool);
+            _angularDampingDictionary.Add(-1, AngularDamping, pool);
         }
 
         public void PrepareForIntegration(float dt)
@@ -92,7 +81,6 @@ namespace BepuPhysics
             gravityDt = Gravity * dt;
             //Since this doesn't use per-body damping, we can precalculate everything.
             linearDampingDt = (float)Math.Pow(MathHelper.Clamp(1 - LinearDamping, 0, 1), dt);
-
             angularDampingDt = (float)Math.Pow(MathHelper.Clamp(1 - AngularDamping, 0, 1), dt);
 
         }
@@ -102,10 +90,10 @@ namespace BepuPhysics
             //Note that we avoid accelerating kinematics. Kinematics are any body with an inverse mass of zero (so a mass of ~infinity). No force can move them.
             if (localInertia.InverseMass > 0)
             {
-                ref var handle = ref Simulation.Bodies.ActiveSet.IndexToHandle[0];
-                ref var index = ref Unsafe.Add(ref handle, bodyIndex);
+                // ref var handle = ref Simulation.Bodies.ActiveSet.IndexToHandle[0];
+                // ref var index = ref Unsafe.Add(ref handle, bodyIndex);
 
-                if (_linearDampingDictionary.Count > 0 && _linearDampingDictionary.TryGetValue(index, out var linearDamping))
+                if (_linearDampingDictionary.TryGetValue(bodyIndex, out var linearDamping))
                 {
                     linearDamping = (float)Math.Pow(MathHelper.Clamp(1 - linearDamping, 0, 1), _dt);
                     velocity.Linear = (velocity.Linear + gravityDt) * linearDamping;
@@ -115,14 +103,13 @@ namespace BepuPhysics
                     velocity.Linear = (velocity.Linear + gravityDt) * linearDampingDt;
                 }
 
-                if (_angularDampingDictionary.Count > 0 && _angularDampingDictionary.TryGetValue(index, out var angularDamping))
+                if (_angularDampingDictionary.TryGetValue(bodyIndex, out var angularDamping))
                 {
                     angularDamping = (float)Math.Pow(MathHelper.Clamp(1 - angularDamping, 0, 1), _dt);
                     velocity.Angular = velocity.Angular * angularDamping;
                 }
                 else
                 {
-
                     velocity.Angular = velocity.Angular * angularDampingDt;
                 }
             }

@@ -39,7 +39,6 @@ namespace Demos.Demos
 
             Simulation = Simulation.Create(BufferPool, new DefaultNarrowPhaseCallbacks(), _poseIntegrator);
 
-            DefaultPoseIntegratorCallbacks.Simulation = Simulation;
 
             var boxShape = new Box(1, 1, 1);
             var baseShape = new Box(5, 1, 5);
